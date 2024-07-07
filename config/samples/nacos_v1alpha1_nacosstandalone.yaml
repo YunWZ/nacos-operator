@@ -1,0 +1,12 @@
+apiVersion: nacos.yunweizhan.com.cn/v1alpha1
+kind: NacosStandalone
+metadata:
+  labels:
+    app.kubernetes.io/name: nacosstandalone
+    app.kubernetes.io/instance: nacosstandalone-sample
+    app.kubernetes.io/part-of: nacos-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: nacos-operator
+  name: nacosstandalone-sample
+spec:
+  # TODO(user): Add fields here

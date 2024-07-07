@@ -1,0 +1,58 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosclusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosclusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones/status
+  verbs:
+  - get
+  - patch
+  - update

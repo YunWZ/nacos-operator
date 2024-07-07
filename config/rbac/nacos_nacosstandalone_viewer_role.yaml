@@ -1,0 +1,27 @@
+# permissions for end users to view nacosstandalones.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: nacosstandalone-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: nacos-operator
+    app.kubernetes.io/part-of: nacos-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: nacosstandalone-viewer-role
+rules:
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones/status
+  verbs:
+  - get
