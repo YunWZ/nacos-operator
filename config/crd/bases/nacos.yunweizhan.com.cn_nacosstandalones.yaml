@@ -56,6 +56,14 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              service:
+                properties:
+                  type:
+                    default: ClusterIp
+                    description: Service Type string describes ingress methods for
+                      a service
+                    type: string
+                type: object
             type: object
           status:
             description: NacosStandaloneStatus defines the observed state of NacosStandalone

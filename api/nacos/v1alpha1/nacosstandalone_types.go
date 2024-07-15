@@ -17,12 +17,19 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+
+type ServiceSpec struct {
+	// +optional
+	// +kubebuilder:default:="ClusterIp"
+	// +kubebuilder:validation:enum=ClusterIp,NodePort,LoadBalancer
+	Type corev1.ServiceType `json:"type,omitempty"`
+}
 
 // NacosStandaloneSpec defines the desired state of NacosStandalone
 type NacosStandaloneSpec struct {
@@ -34,7 +41,11 @@ type NacosStandaloneSpec struct {
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
-	ImagePullSecrets []v1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	// +optional
+	Service ServiceSpec `json:"service,omitempty"`
+	// +optional
+	Pvc *corev1.PersistentVolumeClaimSpec `json:"pvc,omitempty"`
 }
 
 // NacosStandaloneStatus defines the observed state of NacosStandalone
