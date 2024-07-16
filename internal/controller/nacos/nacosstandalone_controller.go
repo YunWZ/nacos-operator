@@ -33,6 +33,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sort"
 )
 
 // NacosStandaloneReconciler reconciles a NacosStandalone object
@@ -93,15 +94,15 @@ func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	} else if requeue {
 		return ctrl.Result{Requeue: true}, nil
 	}
-	return ctrl.Result{}, nil
-}
 
-func getPodName(items []corev1.Pod) []string {
-	res := make([]string, 1)
-	for _, pod := range items {
-		res = append(res, pod.Name)
+	requeue, err = r.updateStatusForNacosStandalone(ns)
+	if err != nil {
+		return ctrl.Result{Requeue: requeue}, err
+	} else if requeue {
+		return ctrl.Result{Requeue: true}, nil
 	}
-	return res
+
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -392,15 +393,6 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 		return true, err
 	}
 
-	podNames := getPodName(podList.Items)
-	if !reflect.DeepEqual(podNames, ns.Status.Nodes) {
-		ns.Status.Nodes = podNames
-
-		if err = r.Update(context.TODO(), ns); err != nil {
-			r.Log.Error(err, "Failed to update NacosStandalone status")
-			return true, err
-		}
-	}
 	return false, nil
 }
 
@@ -421,6 +413,7 @@ func (r *NacosStandaloneReconciler) completeService(ns *nacosv1alpha1.NacosStand
 		r.Log.Error(err, "Failed to get Service")
 		return true, err
 	}
+
 	if svc.Spec.Type != ns.Spec.Service.Type {
 		svc.Spec.Type = ns.Spec.Service.Type
 		if err = r.Update(context.TODO(), svc); err != nil {
@@ -429,6 +422,7 @@ func (r *NacosStandaloneReconciler) completeService(ns *nacosv1alpha1.NacosStand
 		}
 		return true, nil
 	}
+
 	return false, nil
 }
 
@@ -443,6 +437,47 @@ func (r *NacosStandaloneReconciler) deletePVC(name types.NamespacedName) error {
 		return nil
 	}
 	return err
+}
+
+func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+	dep := &appsv1.Deployment{}
+	err := r.Get(context.TODO(), types.NamespacedName{Namespace: ns.Namespace, Name: ns.Name}, dep)
+	if err != nil && apierrors.IsNotFound(err) {
+		r.Log.Error(err, "Failed to get Deployment.")
+		return true, nil
+	}
+	if len(dep.Status.Conditions) == 0 {
+		return true, nil
+	}
+
+	cond := appsv1.DeploymentCondition{}
+	dep.Status.Conditions[0].DeepCopyInto(&cond)
+
+	needUpdate := false
+	if len(ns.Status.Conditions) != 0 {
+		sort.Slice(ns.Status.Conditions, func(i, j int) bool {
+			return ns.Status.Conditions[i].LastUpdateTime.After(ns.Status.Conditions[j].LastUpdateTime.Time)
+		})
+		if !reflect.DeepEqual(cond, ns.Status.Conditions[0]) {
+			needUpdate = true
+			ns.Status.Conditions = append(ns.Status.Conditions, cond)
+		}
+	} else {
+		needUpdate = true
+		ns.Status.Conditions = append(dep.Status.Conditions, cond)
+	}
+
+	if needUpdate {
+		err = r.Status().Update(context.TODO(), ns)
+		if err != nil && apierrors.IsNotFound(err) {
+			return false, err
+		} else if err != nil {
+			r.Log.Error(err, "Failed to update status for NacosStandalone.")
+			return true, err
+		}
+	}
+
+	return false, nil
 }
 
 func labelsForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) map[string]string {
