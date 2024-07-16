@@ -74,7 +74,14 @@ func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	requeue, err := r.completePVC(ns)
+	requeue, err := r.completeProbe(ns)
+	if err != nil {
+		return ctrl.Result{Requeue: requeue}, err
+	} else if requeue {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	requeue, err = r.completePVC(ns)
 	if err != nil {
 		return ctrl.Result{Requeue: requeue}, err
 	} else if requeue {
@@ -155,12 +162,16 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 						Env: []corev1.EnvVar{
 							{Name: "MODE", Value: "standalone"},
 						},
+						LivenessProbe:  ns.Spec.LivenessProbe,
+						ReadinessProbe: ns.Spec.ReadinessProbe,
+						StartupProbe:   ns.Spec.StartupProbe,
 					}},
 					ImagePullSecrets: ns.Spec.ImagePullSecrets,
 				},
 			},
 		},
 	}
+
 	if ns.Spec.Image != "" {
 		dep.Spec.Template.Spec.Containers[0].Image = ns.Spec.Image
 	}
@@ -188,6 +199,7 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 			SubPath:   "logs",
 		})
 	}
+
 	return dep
 
 }
@@ -376,6 +388,19 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 		found.Spec.Replicas = &size
 	}
 
+	if ns.Spec.ReadinessProbe != nil && !reflect.DeepEqual(ns.Spec.ReadinessProbe, found.Spec.Template.Spec.Containers[0].ReadinessProbe) {
+		needUpdate = true
+		found.Spec.Template.Spec.Containers[0].ReadinessProbe = ns.Spec.ReadinessProbe
+	}
+	if ns.Spec.LivenessProbe != nil && !reflect.DeepEqual(ns.Spec.LivenessProbe, found.Spec.Template.Spec.Containers[0].LivenessProbe) {
+		needUpdate = true
+		found.Spec.Template.Spec.Containers[0].LivenessProbe = ns.Spec.LivenessProbe
+	}
+	if ns.Spec.StartupProbe != nil && !reflect.DeepEqual(ns.Spec.StartupProbe, found.Spec.Template.Spec.Containers[0].StartupProbe) {
+		needUpdate = true
+		found.Spec.Template.Spec.Containers[0].StartupProbe = ns.Spec.StartupProbe
+	}
+
 	if needUpdate {
 		if err = r.Update(context.TODO(), found); err != nil {
 			r.Log.Error(err, "Failed to update Deployment, Deployment.Namespace: %s, Deployment.Name: %s", found.Namespace, found.Name)
@@ -383,14 +408,6 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 		}
 		// Spec updated - return and requeue
 		return true, nil
-	}
-	// Update the NacosStandalone status with the pod names
-	// List the pods for this NacosStandalone's deployment
-	podList := &corev1.PodList{}
-	listOpts := []client.ListOption{client.InNamespace(ns.Namespace), client.MatchingLabels(labelsForNacosStandalone(ns))}
-	if err = r.List(context.TODO(), podList, listOpts...); err != nil {
-		r.Log.Error(err, "Failed to list pods, NacosStandalone.Namespace: %s , NacosStandalone.Name: %s", ns.Namespace, ns.Name)
-		return true, err
 	}
 
 	return false, nil
@@ -450,8 +467,11 @@ func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1al
 		return true, nil
 	}
 
-	cond := appsv1.DeploymentCondition{}
-	dep.Status.Conditions[0].DeepCopyInto(&cond)
+	sort.Slice(dep.Status.Conditions, func(i, j int) bool {
+		return dep.Status.Conditions[i].LastUpdateTime.After(dep.Status.Conditions[j].LastUpdateTime.Time)
+	})
+
+	cond := dep.Status.Conditions[0]
 
 	needUpdate := false
 	if len(ns.Status.Conditions) != 0 {
@@ -460,11 +480,11 @@ func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1al
 		})
 		if !reflect.DeepEqual(cond, ns.Status.Conditions[0]) {
 			needUpdate = true
-			ns.Status.Conditions = append(ns.Status.Conditions, cond)
+			ns.Status.Conditions = dep.Status.Conditions
 		}
 	} else {
 		needUpdate = true
-		ns.Status.Conditions = append(dep.Status.Conditions, cond)
+		ns.Status.Conditions = dep.Status.Conditions
 	}
 
 	if needUpdate {
@@ -473,6 +493,82 @@ func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1al
 			return false, err
 		} else if err != nil {
 			r.Log.Error(err, "Failed to update status for NacosStandalone.")
+			return true, err
+		}
+	}
+
+	if dep.Status.AvailableReplicas == 1 {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (r *NacosStandaloneReconciler) completeProbe(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+	needUpdate := false
+	if ns.Spec.LivenessProbe == nil {
+		needUpdate = true
+		ns.Spec.LivenessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: constants.DefaultNacosLivenessPath,
+					Port: intstr.FromString(constants.DefaultNacosServerHttpPortName),
+					//Host:   "127.0.0.1",
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
+			TimeoutSeconds:      10,
+			SuccessThreshold:    1,
+			FailureThreshold:    5,
+		}
+	}
+
+	if ns.Spec.ReadinessProbe == nil {
+		needUpdate = true
+		ns.Spec.ReadinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: constants.DefaultNacosReadinessPath,
+					Port: intstr.FromString(constants.DefaultNacosServerHttpPortName),
+					//Host:   "127.0.0.1",
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
+			TimeoutSeconds:      3,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+		}
+	}
+
+	if ns.Spec.StartupProbe == nil {
+		needUpdate = true
+		ns.Spec.StartupProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: constants.DefaultNacosReadinessPath,
+					Port: intstr.FromString(constants.DefaultNacosServerHttpPortName),
+					//Host:   "127.0.0.1",
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       10,
+			TimeoutSeconds:      5,
+			SuccessThreshold:    1,
+			FailureThreshold:    50,
+		}
+	}
+
+	if needUpdate {
+		r.Log.Info("Update NacosStandalone with default probes.")
+		err := r.Update(context.TODO(), ns)
+		if err != nil && apierrors.IsNotFound(err) {
+			return false, err
+		} else if err != nil {
 			return true, err
 		}
 	}

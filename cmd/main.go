@@ -70,7 +70,7 @@ func main() {
 
 	namespace, err := getWatchNamespace()
 	if err != nil {
-		setupLog.Error(err, "unable to get WatchNamespace, "+
+		setupLog.Info("unable to get WatchNamespace, " +
 			"the manager will watch and manage resources in all namespaces")
 	}
 

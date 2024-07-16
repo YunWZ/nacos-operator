@@ -32,6 +32,23 @@ type ServiceSpec struct {
 	Type corev1.ServiceType `json:"type,omitempty"`
 }
 
+type MySQLDatabaseSource struct {
+	// +optional
+	JdbcUrl string `json:"jdbcUrl,omitempty"`
+	// +optional
+	DbHost string `json:"dbHost,omitempty"`
+	// +optional
+	DbPort string `json:"dbPort,omitempty"`
+	// +optional
+	DbName     string                      `json:"dbName,omitempty"`
+	DbUser     string                      `json:"dbUser,omitempty"`
+	DbPassword corev1.LocalObjectReference `json:"dbPassword,omitempty"`
+}
+
+type DatabaseSource struct {
+	Mysql MySQLDatabaseSource `json:"mysql,omitempty"`
+}
+
 // NacosStandaloneSpec defines the desired state of NacosStandalone
 type NacosStandaloneSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -47,6 +64,20 @@ type NacosStandaloneSpec struct {
 	Service ServiceSpec `json:"service,omitempty"`
 	// +optional
 	Pvc *corev1.PersistentVolumeClaimSpec `json:"pvc,omitempty"`
+	// +optional
+	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
+	// +optional
+	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
+	// +optional
+	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
+	// +optional
+	Database *DatabaseSource `json:"database,omitempty"`
+	// +optional
+	JvmOptions string `json:"jvmOptions,omitempty"`
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// +optional
+	ApplicationConfig corev1.LocalObjectReference `json:"applicationConfig,omitempty"`
 }
 
 // NacosStandaloneStatus defines the observed state of NacosStandalone
