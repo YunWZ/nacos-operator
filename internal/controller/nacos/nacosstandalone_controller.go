@@ -400,7 +400,6 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 			r.Log.Error(err, "Failed to update NacosStandalone status")
 			return true, err
 		}
-		return true, nil
 	}
 	return false, nil
 }
