@@ -35,18 +35,20 @@ type ServiceSpec struct {
 type MySQLDatabaseSource struct {
 	// +optional
 	JdbcUrl string `json:"jdbcUrl,omitempty"`
+	// +kubebuilder:validation:MinItems=1
+	DbServer []DatabaseServer `json:"dbServer,omitempty"`
 	// +optional
-	DbHost string `json:"dbHost,omitempty"`
-	// +optional
-	DbPort string `json:"dbPort,omitempty"`
-	// +optional
-	DbName     string                      `json:"dbName,omitempty"`
-	DbUser     string                      `json:"dbUser,omitempty"`
-	DbPassword corev1.LocalObjectReference `json:"dbPassword,omitempty"`
+	// +kubebuilder:validation:Minlength=1
+	DbName string                      `json:"dbName,omitempty"`
+	Secret corev1.LocalObjectReference `json:"secret,omitempty"`
 }
 
+type DatabaseServer struct {
+	DbHost string `json:"dbHost,omitempty"`
+	DbPort string `json:"dbPort,omitempty"`
+}
 type DatabaseSource struct {
-	Mysql MySQLDatabaseSource `json:"mysql,omitempty"`
+	Mysql *MySQLDatabaseSource `json:"mysql,omitempty"`
 }
 
 // NacosStandaloneSpec defines the desired state of NacosStandalone

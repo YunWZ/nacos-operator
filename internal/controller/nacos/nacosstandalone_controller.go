@@ -19,6 +19,7 @@ package nacos
 import (
 	"context"
 	"errors"
+	"fmt"
 	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
 	"github.com/go-logr/logr"
@@ -34,6 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // NacosStandaloneReconciler reconciles a NacosStandalone object
@@ -74,28 +77,28 @@ func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	requeue, err := r.completeProbe(ns)
+	requeue, err := r.completeProbeForNacosStandalone(ns)
 	if err != nil {
 		return ctrl.Result{Requeue: requeue}, err
 	} else if requeue {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	requeue, err = r.completePVC(ns)
+	requeue, err = r.completePVCForNacosStandalone(ns)
 	if err != nil {
 		return ctrl.Result{Requeue: requeue}, err
 	} else if requeue {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	requeue, err = r.completeDeployment(ns)
+	requeue, err = r.completeDeploymentForNacosStandalone(ns)
 	if err != nil {
 		return ctrl.Result{Requeue: requeue}, err
 	} else if requeue {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	requeue, err = r.completeService(ns)
+	requeue, err = r.completeServiceForNacosStandalone(ns)
 	if err != nil {
 		return ctrl.Result{Requeue: requeue}, err
 	} else if requeue {
@@ -124,10 +127,10 @@ func (r *NacosStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) *appsv1.Deployment {
+func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (dep *appsv1.Deployment, err error) {
 	ls := labelsForNacosStandalone(ns)
 	replicas := int32(1)
-	dep := &appsv1.Deployment{
+	dep = &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ns.Name,
 			Namespace: ns.Namespace,
@@ -200,8 +203,11 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 		})
 	}
 
-	return dep
-
+	_, err = r.completeDatabaseForDeployment(ns, dep)
+	if err != nil {
+		return nil, err
+	}
+	return dep, nil
 }
 
 func (r *NacosStandaloneReconciler) generatePVCName(name string) string {
@@ -311,7 +317,7 @@ func (r *NacosStandaloneReconciler) checkPVCExist(ns *nacosv1alpha1.NacosStandal
 
 }
 
-func (r *NacosStandaloneReconciler) completePVC(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+func (r *NacosStandaloneReconciler) completePVCForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
 	// Check PVC if exist
 	pvc, pvcExists, err := r.checkPVCExist(ns)
 	if err != nil {
@@ -352,11 +358,11 @@ func (r *NacosStandaloneReconciler) completePVC(ns *nacosv1alpha1.NacosStandalon
 		}
 		return true, nil
 	}
-	r.Log.Info("Abnormal logic, please check the NacosStandaloneReconciler.completePVC() method")
+	r.Log.Info("Abnormal logic, please check the NacosStandaloneReconciler.completePVCForNacosStandalone() method")
 	return false, errors.New("unknown error")
 }
 
-func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
+func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
 	found := &appsv1.Deployment{}
 	err = r.Get(context.TODO(), types.NamespacedName{
 		Namespace: ns.Namespace,
@@ -364,7 +370,10 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 	}, found)
 
 	if err != nil && apierrors.IsNotFound(err) {
-		dep := r.deploymentForNacosStandalone(ns)
+		dep, err := r.deploymentForNacosStandalone(ns)
+		if err != nil {
+			return false, err
+		}
 		if err = r.Create(context.TODO(), dep); err != nil {
 			r.Log.Error(err, "Deployment.Namespace: %s , Deployment.Name: %s", dep.Namespace, dep.Name)
 			return true, err
@@ -376,7 +385,11 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 		return true, err
 	}
 
-	needUpdate := false
+	needUpdate, err := r.completeDatabaseForDeployment(ns, found)
+	if err != nil {
+		return false, err
+	}
+
 	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].Image, ns.Spec.Image) {
 		needUpdate = true
 		found.Spec.Template.Spec.Containers[0].Image = ns.Spec.Image
@@ -413,7 +426,7 @@ func (r *NacosStandaloneReconciler) completeDeployment(ns *nacosv1alpha1.NacosSt
 	return false, nil
 }
 
-func (r *NacosStandaloneReconciler) completeService(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
+func (r *NacosStandaloneReconciler) completeServiceForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
 	svc := &corev1.Service{}
 	err = r.Get(context.TODO(), types.NamespacedName{
 		Namespace: ns.Namespace,
@@ -504,7 +517,7 @@ func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1al
 	return true, nil
 }
 
-func (r *NacosStandaloneReconciler) completeProbe(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
 	needUpdate := false
 	if ns.Spec.LivenessProbe == nil {
 		needUpdate = true
@@ -574,6 +587,109 @@ func (r *NacosStandaloneReconciler) completeProbe(ns *nacosv1alpha1.NacosStandal
 	}
 
 	return false, nil
+}
+
+func (r *NacosStandaloneReconciler) completeDatabaseForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool, err error) {
+	// TODO: Maybe could support others database.
+	var env []corev1.EnvVar
+	if ns.Spec.Database != nil {
+		needUpdate = true
+		if ns.Spec.Database.Mysql != nil {
+			env = r.generateDataBaseEnvForMysql(ns)
+		} else {
+			err = errors.New("unsupported database type for NacosStandalone")
+			r.Log.Error(err, "Check your database spec")
+			return false, err
+		}
+	}
+
+	if needUpdate {
+		oldEnv := dep.Spec.Template.Spec.Containers[0].Env
+		for _, item := range oldEnv {
+			switch item.Name {
+			case constants.EnvDBNum, constants.EnvDBPassword, constants.EnvDatabasePlatform, constants.EnvDBUser:
+				continue
+			}
+			if strings.HasPrefix(item.Name, constants.EnvDBUrlPrefix) {
+				continue
+			}
+			env = append(env, item)
+		}
+		dep.Spec.Template.Spec.Containers[0].Env = env
+	}
+
+	return needUpdate, nil
+}
+
+func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha1.NacosStandalone) (envs []corev1.EnvVar) {
+	envs = append(envs, corev1.EnvVar{
+		Name:  constants.EnvDatabasePlatform,
+		Value: "mysql",
+	})
+	envs = append(envs, corev1.EnvVar{
+		Name:  constants.EnvDBNum,
+		Value: strconv.Itoa(len(ns.Spec.Database.Mysql.DbServer)),
+	})
+
+	secret := &corev1.Secret{}
+	secretName := types.NamespacedName{
+		Namespace: ns.Namespace,
+		Name:      ns.Spec.Database.Mysql.Secret.Name,
+	}
+	err := r.Get(context.TODO(), secretName, secret)
+	if err != nil {
+		r.Log.Error(err, "Failed to get secret. The secret must be created manually")
+	}
+
+	if _, found := secret.Data["user"]; !found {
+		err = errors.New("user not found in secret. The secret must be contained in 'user' field")
+		r.Log.Error(err, "", "secret", secretName)
+		return nil
+	}
+
+	if _, found := secret.Data["password"]; !found {
+		err = errors.New("password not found in secret. The secret must be contained in 'password' field")
+		r.Log.Error(err, "", "secret", secretName)
+		return nil
+	}
+
+	envs = append(envs, corev1.EnvVar{
+		Name: constants.EnvDBUser,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: ns.Spec.Database.Mysql.Secret.Name},
+				Key:                  "user",
+			}},
+	})
+
+	envs = append(envs, corev1.EnvVar{
+		Name: constants.EnvDBPassword,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: ns.Spec.Database.Mysql.Secret.Name},
+				Key:                  "password",
+			},
+		},
+	})
+
+	dbName := ns.Spec.Database.Mysql.DbName
+	if dbName == "" {
+		dbName = constants.DefaultDatabaseName
+	}
+
+	jdbcTemplate := ns.Spec.Database.Mysql.JdbcUrl
+	if jdbcTemplate == "" {
+		jdbcTemplate = string(constants.DefaultMysqlJDBCTemplate)
+	}
+
+	for ix, server := range ns.Spec.Database.Mysql.DbServer {
+		envs = append(envs, corev1.EnvVar{
+			Name:  constants.EnvDBUrlPrefix + strconv.Itoa(ix),
+			Value: fmt.Sprintf(jdbcTemplate, server.DbHost, server.DbPort, dbName),
+		})
+	}
+
+	return
 }
 
 func labelsForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) map[string]string {
