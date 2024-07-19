@@ -49,7 +49,7 @@ type NacosStandaloneReconciler struct {
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=pods;configmaps,verbs=get;list;
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list,watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -143,7 +143,8 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 				ObjectMeta: metav1.ObjectMeta{Labels: ls},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{Name: "nacos-server",
-						Image: constants.DefaultImage,
+						Image:           constants.DefaultImage,
+						ImagePullPolicy: ns.Spec.ImagePullPolicy,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          constants.DefaultNacosServerHttpPortName,
@@ -179,34 +180,26 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 		dep.Spec.Template.Spec.Containers[0].Image = ns.Spec.Image
 	}
 
-	if ns.Spec.Pvc != nil {
-		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: "data",
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.generatePVCName(ns.Name),
-					ReadOnly:  false,
-				},
-			},
-		})
-		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      "data",
-			ReadOnly:  false,
-			MountPath: "/home/nacos/data",
-			SubPath:   "data",
-		})
-		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      "data",
-			ReadOnly:  false,
-			MountPath: "/home/nacos/logs",
-			SubPath:   "logs",
-		})
+	volumes, err := r.generateVolumesForDeployment(ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			r.Log.Error(err, "Failed to get configmap. The configmap must be created manually")
+		}
+		return nil, err
 	}
+	dep.Spec.Template.Spec.Volumes = volumes
+
+	volumeMounts, err := r.generateVolumeMountsForDeployment(ns)
+	if err != nil {
+		return nil, err
+	}
+	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 
 	_, err = r.completeDatabaseForDeployment(ns, dep)
 	if err != nil {
 		return nil, err
 	}
+
 	return dep, nil
 }
 
@@ -310,10 +303,7 @@ func (r *NacosStandaloneReconciler) checkPVCExist(ns *nacosv1alpha1.NacosStandal
 		return pvc, true, nil
 	}
 
-	if apierrors.IsNotFound(err) {
-		return nil, false, nil
-	}
-	return nil, false, err
+	return nil, false, client.IgnoreNotFound(err)
 
 }
 
@@ -393,6 +383,28 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].Image, ns.Spec.Image) {
 		needUpdate = true
 		found.Spec.Template.Spec.Containers[0].Image = ns.Spec.Image
+	}
+	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].ImagePullPolicy, ns.Spec.ImagePullPolicy) {
+		needUpdate = true
+		found.Spec.Template.Spec.Containers[0].ImagePullPolicy = ns.Spec.ImagePullPolicy
+	}
+	if !reflect.DeepEqual(found.Spec.Template.Spec.ImagePullSecrets, ns.Spec.ImagePullSecrets) {
+		needUpdate = true
+		found.Spec.Template.Spec.ImagePullSecrets = ns.Spec.ImagePullSecrets
+	}
+
+	if r.checkVolumeChanged(found, ns) {
+		needUpdate = true
+		volumes, err := r.generateVolumesForDeployment(ns)
+		if err != nil {
+			return true, err
+		}
+		found.Spec.Template.Spec.Volumes = volumes
+		mounts, err := r.generateVolumeMountsForDeployment(ns)
+		if err != nil {
+			return true, err
+		}
+		found.Spec.Template.Spec.Containers[0].VolumeMounts = mounts
 	}
 
 	size := int32(1)
@@ -692,6 +704,87 @@ func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha
 	return
 }
 
+func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumes []corev1.Volume, err error) {
+	if ns.Spec.Pvc != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: r.generatePVCName(ns.Name),
+					ReadOnly:  false,
+				},
+			},
+		})
+	}
+	if ns.Spec.ApplicationConfig != nil && ns.Spec.ApplicationConfig.Name != "" {
+		cm := &corev1.ConfigMap{}
+		err = r.Get(context.TODO(), types.NamespacedName{
+			Namespace: ns.Namespace,
+			Name:      ns.Spec.ApplicationConfig.Name,
+		}, cm)
+		if err != nil {
+			return nil, err
+		}
+
+		volumes = append(volumes, corev1.Volume{
+			Name: "conf",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: ns.Spec.ApplicationConfig.Name,
+					},
+				},
+			},
+		})
+	}
+	return
+}
+
+func (r *NacosStandaloneReconciler) generateVolumeMountsForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumeMounts []corev1.VolumeMount, err error) {
+	if ns.Spec.Pvc != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "data",
+			ReadOnly:  false,
+			MountPath: "/home/nacos/data",
+			SubPath:   "data",
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "data",
+			ReadOnly:  false,
+			MountPath: "/home/nacos/logs",
+			SubPath:   "logs",
+		})
+	}
+
+	if ns.Spec.ApplicationConfig != nil && ns.Spec.ApplicationConfig.Name != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "conf",
+			ReadOnly:  true,
+			MountPath: "/home/nacos/conf",
+		})
+	}
+
+	return
+}
+
+func (r *NacosStandaloneReconciler) checkVolumeChanged(dep *appsv1.Deployment, ns *nacosv1alpha1.NacosStandalone) (changed bool) {
+	var data, conf *corev1.Volume
+	for _, item := range dep.Spec.Template.Spec.Volumes {
+		if item.Name == "data" {
+			data = &item
+		} else if item.Name == "conf" {
+			conf = &item
+		}
+	}
+	if (ns.Spec.Pvc != nil && data == nil) || (ns.Spec.Pvc == nil && data != nil) {
+		return true
+	}
+
+	if (ns.Spec.ApplicationConfig != nil && conf == nil) || (ns.Spec.ApplicationConfig == nil && conf != nil) {
+		return true
+	}
+	return
+}
 func labelsForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) map[string]string {
 	return map[string]string{constants.LabelNacosStandalone: ns.Name, constants.LabelApp: ns.Name}
 }

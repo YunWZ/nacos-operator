@@ -27,8 +27,8 @@ import (
 
 type ServiceSpec struct {
 	// +optional
-	// +kubebuilder:default:="ClusterIp"
-	// +kubebuilder:validation:enum=ClusterIp,NodePort,LoadBalancer
+	// +kubebuilder:default="ClusterIp"
+	// +kubebuilder:validation:enum=ClusterIp;NodePort;LoadBalancer
 	Type corev1.ServiceType `json:"type,omitempty"`
 }
 
@@ -63,6 +63,10 @@ type NacosStandaloneSpec struct {
 	// +patchStrategy=merge
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
 	// +optional
+	// +kubebuilder:default="IfNotPresent"
+	// +kubebuilder:validation:enum=Always;IfNotPresent;Never
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+	// +optional
 	Service ServiceSpec `json:"service,omitempty"`
 	// +optional
 	Pvc *corev1.PersistentVolumeClaimSpec `json:"pvc,omitempty"`
@@ -79,7 +83,7 @@ type NacosStandaloneSpec struct {
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional
-	ApplicationConfig corev1.LocalObjectReference `json:"applicationConfig,omitempty"`
+	ApplicationConfig *corev1.LocalObjectReference `json:"applicationConfig,omitempty"`
 }
 
 // NacosStandaloneStatus defines the observed state of NacosStandalone
