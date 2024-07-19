@@ -39,6 +39,8 @@ import (
 	"strings"
 )
 
+var size = int32(1)
+
 // NacosStandaloneReconciler reconciles a NacosStandalone object
 type NacosStandaloneReconciler struct {
 	client.Client
@@ -195,7 +197,11 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 	}
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 
-	_, err = r.completeDatabaseForDeployment(ns, dep)
+	_, err = r.processDatabaseForDeployment(ns, dep)
+	if err != nil {
+		return nil, err
+	}
+	_, err = r.processJvmOptionsForDeployment(ns, dep)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +381,7 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 		return true, err
 	}
 
-	needUpdate, err := r.completeDatabaseForDeployment(ns, found)
+	needUpdate, err := r.processDatabaseForDeployment(ns, found)
 	if err != nil {
 		return false, err
 	}
@@ -407,7 +413,11 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 		found.Spec.Template.Spec.Containers[0].VolumeMounts = mounts
 	}
 
-	size := int32(1)
+	hasJvmOptions, err := r.processJvmOptionsForDeployment(ns, found)
+	needUpdate = needUpdate || hasJvmOptions
+	if err != nil {
+		return true, err
+	}
 	if *found.Spec.Replicas != size {
 		needUpdate = true
 		found.Spec.Replicas = &size
@@ -598,10 +608,10 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 		}
 	}
 
-	return false, nil
+	return needUpdate, nil
 }
 
-func (r *NacosStandaloneReconciler) completeDatabaseForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool, err error) {
+func (r *NacosStandaloneReconciler) processDatabaseForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool, err error) {
 	// TODO: Maybe could support others database.
 	var env []corev1.EnvVar
 	if ns.Spec.Database != nil {
@@ -782,6 +792,22 @@ func (r *NacosStandaloneReconciler) checkVolumeChanged(dep *appsv1.Deployment, n
 
 	if (ns.Spec.ApplicationConfig != nil && conf == nil) || (ns.Spec.ApplicationConfig == nil && conf != nil) {
 		return true
+	}
+	return
+}
+
+func (r *NacosStandaloneReconciler) processJvmOptionsForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool, err error) {
+	if ns.Spec.JvmOptions != "" {
+		newEnv := []corev1.EnvVar{{Name: "JAVA_OPT", Value: ns.Spec.JvmOptions}}
+		for _, envVar := range dep.Spec.Template.Spec.Containers[0].Env {
+			if envVar.Name != "JAVA_OPT" {
+				newEnv = append(newEnv, envVar)
+			}
+		}
+
+		dep.Spec.Template.Spec.Containers[0].Env = newEnv
+
+		return true, nil
 	}
 	return
 }
