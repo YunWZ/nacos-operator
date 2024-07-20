@@ -37,6 +37,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var size = int32(1)
@@ -81,40 +82,44 @@ func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	requeue, err := r.completeProbeForNacosStandalone(ns)
 	if err != nil {
-		return ctrl.Result{Requeue: requeue}, err
+		return r.newResult(requeue), err
 	} else if requeue {
-		return ctrl.Result{Requeue: true}, nil
+		return r.newResult(true), nil
 	}
 
 	requeue, err = r.completePVCForNacosStandalone(ns)
 	if err != nil {
-		return ctrl.Result{Requeue: requeue}, err
+		return r.newResult(requeue), err
 	} else if requeue {
-		return ctrl.Result{Requeue: true}, nil
+		return r.newResult(true), nil
 	}
 
 	requeue, err = r.completeDeploymentForNacosStandalone(ns)
 	if err != nil {
-		return ctrl.Result{Requeue: requeue}, err
+		return r.newResult(requeue), err
 	} else if requeue {
-		return ctrl.Result{Requeue: true}, nil
+		return r.newResult(true), nil
 	}
 
 	requeue, err = r.completeServiceForNacosStandalone(ns)
 	if err != nil {
-		return ctrl.Result{Requeue: requeue}, err
+		return r.newResult(requeue), err
 	} else if requeue {
-		return ctrl.Result{Requeue: true}, nil
+		return r.newResult(true), nil
 	}
 
 	requeue, err = r.updateStatusForNacosStandalone(ns)
 	if err != nil {
-		return ctrl.Result{Requeue: requeue}, err
+		return r.newResult(requeue), err
 	} else if requeue {
-		return ctrl.Result{Requeue: true}, nil
+		return r.newResult(true), nil
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *NacosStandaloneReconciler) newResult(requeue bool) ctrl.Result {
+	return ctrl.Result{Requeue: requeue, RequeueAfter: time.Second * 3}
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -129,9 +134,9 @@ func (r *NacosStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (dep *appsv1.Deployment, err error) {
+func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (dep *appsv1.Deployment) {
 	ls := labelsForNacosStandalone(ns)
-	replicas := int32(1)
+	replicas := size
 	dep = &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ns.Name,
@@ -182,31 +187,19 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 		dep.Spec.Template.Spec.Containers[0].Image = ns.Spec.Image
 	}
 
-	volumes, err := r.generateVolumesForDeployment(ns)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			r.Log.Error(err, "Failed to get configmap. The configmap must be created manually")
-		}
-		return nil, err
-	}
+	volumes := r.generateVolumesForDeployment(ns)
+
 	dep.Spec.Template.Spec.Volumes = volumes
 
-	volumeMounts, err := r.generateVolumeMountsForDeployment(ns)
-	if err != nil {
-		return nil, err
-	}
+	volumeMounts := r.generateVolumeMountsForDeployment(ns)
+
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 
-	_, err = r.processDatabaseForDeployment(ns, dep)
-	if err != nil {
-		return nil, err
-	}
-	_, err = r.processJvmOptionsForDeployment(ns, dep)
-	if err != nil {
-		return nil, err
-	}
+	_ = r.processDatabaseEnvForDeployment(ns, dep)
 
-	return dep, nil
+	_ = r.processJvmOptionsForDeployment(ns, dep)
+
+	return dep
 }
 
 func (r *NacosStandaloneReconciler) generatePVCName(name string) string {
@@ -277,15 +270,19 @@ func (r *NacosStandaloneReconciler) deleteService(ns types.NamespacedName) error
 }
 
 func (r *NacosStandaloneReconciler) deleteResourcesForNacosStandalone(ctx context.Context, req ctrl.Request) (err error) {
-	if err = r.deleteDeployment(req.NamespacedName); err != nil {
+	r.Log.Info("Try to delete deployment resources")
+	if err = r.deleteDeployment(req.NamespacedName); client.IgnoreNotFound(err) != nil {
 		return err
 	}
 
-	if err = r.deleteService(req.NamespacedName); err != nil {
+	r.Log.Info("Try to delete service resources")
+	if err = r.deleteService(req.NamespacedName); client.IgnoreNotFound(err) != nil {
 		return err
 	}
+
+	r.Log.Info("Try to delete pvc resources")
 	err = r.deletePVC(req.NamespacedName)
-	return err
+	return client.IgnoreNotFound(err)
 }
 
 func (r *NacosStandaloneReconciler) persistentVolumeClaimForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) *corev1.PersistentVolumeClaim {
@@ -295,7 +292,7 @@ func (r *NacosStandaloneReconciler) persistentVolumeClaimForNacosStandalone(ns *
 			Namespace: ns.Namespace,
 			Labels:    labelsForNacosStandalone(ns),
 		},
-		Spec:   corev1.PersistentVolumeClaimSpec{},
+		Spec:   *ns.Spec.Pvc,
 		Status: corev1.PersistentVolumeClaimStatus{},
 	}
 
@@ -313,35 +310,27 @@ func (r *NacosStandaloneReconciler) checkPVCExist(ns *nacosv1alpha1.NacosStandal
 
 }
 
-func (r *NacosStandaloneReconciler) completePVCForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+func (r *NacosStandaloneReconciler) completePVCForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
+	// Needed to delete pvc.
+	if ns.Spec.Pvc == nil {
+		return false, nil
+	}
+
 	// Check PVC if exist
 	pvc, pvcExists, err := r.checkPVCExist(ns)
 	if err != nil {
 		r.Log.Error(err, "Failed to check if PVC exists")
 		return true, err
 	}
-	// Needed to delete pvc.
-	if ns.Spec.Pvc == nil {
-		if pvcExists {
-			err = r.Delete(context.TODO(), pvc)
-			if err != nil {
-				r.Log.Error(err, "Failed to delete PVC")
-				return true, err
-			}
-
-		}
-		r.Log.Info("NacosStandalone CR doesn't has a pvc", "instance", ns.Namespace+"/"+ns.Name)
-		return false, nil
-	}
 
 	if ns.Spec.Pvc != nil && !pvcExists {
 		// Needed to create pvc.
 		pvc := r.persistentVolumeClaimForNacosStandalone(ns)
-		if err = r.Create(context.TODO(), pvc); err != nil {
+		if err = r.Create(context.TODO(), pvc); client.IgnoreAlreadyExists(err) != nil {
 			r.Log.Error(err, "PVC.Namespace: %s , PVC.Name: %s", pvc.Namespace, pvc.Name)
 			return true, err
 		}
-		r.Log.Info("Create PVC successfully!")
+		r.Log.Info("PVC already exists")
 		return true, nil
 	}
 
@@ -366,25 +355,16 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 	}, found)
 
 	if err != nil && apierrors.IsNotFound(err) {
-		dep, err := r.deploymentForNacosStandalone(ns)
-		if err != nil {
-			return false, err
-		}
-		if err = r.Create(context.TODO(), dep); err != nil {
-			r.Log.Error(err, "Deployment.Namespace: %s , Deployment.Name: %s", dep.Namespace, dep.Name)
-			return true, err
-		}
-		// Deployment created successfully - return and requeue
-		return true, nil
+		dep := r.deploymentForNacosStandalone(ns)
+
+		err = r.Create(context.TODO(), dep)
+		return true, client.IgnoreAlreadyExists(err)
 	} else if err != nil {
 		r.Log.Error(err, "Failed to get Deployment")
 		return true, err
 	}
 
-	needUpdate, err := r.processDatabaseForDeployment(ns, found)
-	if err != nil {
-		return false, err
-	}
+	needUpdate := r.processDatabaseEnvForDeployment(ns, found)
 
 	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].Image, ns.Spec.Image) {
 		needUpdate = true
@@ -401,23 +381,16 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 
 	if r.checkVolumeChanged(found, ns) {
 		needUpdate = true
-		volumes, err := r.generateVolumesForDeployment(ns)
-		if err != nil {
-			return true, err
-		}
+		volumes := r.generateVolumesForDeployment(ns)
+
 		found.Spec.Template.Spec.Volumes = volumes
-		mounts, err := r.generateVolumeMountsForDeployment(ns)
-		if err != nil {
-			return true, err
-		}
+		mounts := r.generateVolumeMountsForDeployment(ns)
+
 		found.Spec.Template.Spec.Containers[0].VolumeMounts = mounts
 	}
 
-	hasJvmOptions, err := r.processJvmOptionsForDeployment(ns, found)
-	needUpdate = needUpdate || hasJvmOptions
-	if err != nil {
-		return true, err
-	}
+	needUpdate = r.processJvmOptionsForDeployment(ns, found) || needUpdate
+
 	if *found.Spec.Replicas != size {
 		needUpdate = true
 		found.Spec.Replicas = &size
@@ -611,7 +584,7 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 	return needUpdate, nil
 }
 
-func (r *NacosStandaloneReconciler) processDatabaseForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool, err error) {
+func (r *NacosStandaloneReconciler) processDatabaseEnvForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool) {
 	// TODO: Maybe could support others database.
 	var env []corev1.EnvVar
 	if ns.Spec.Database != nil {
@@ -619,9 +592,8 @@ func (r *NacosStandaloneReconciler) processDatabaseForDeployment(ns *nacosv1alph
 		if ns.Spec.Database.Mysql != nil {
 			env = r.generateDataBaseEnvForMysql(ns)
 		} else {
-			err = errors.New("unsupported database type for NacosStandalone")
-			r.Log.Error(err, "Check your database spec")
-			return false, err
+			r.Log.Info("Unsupported database type for NacosStandalone, check your database spec")
+			return false
 		}
 	}
 
@@ -640,7 +612,7 @@ func (r *NacosStandaloneReconciler) processDatabaseForDeployment(ns *nacosv1alph
 		dep.Spec.Template.Spec.Containers[0].Env = env
 	}
 
-	return needUpdate, nil
+	return needUpdate
 }
 
 func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha1.NacosStandalone) (envs []corev1.EnvVar) {
@@ -714,7 +686,7 @@ func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha
 	return
 }
 
-func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumes []corev1.Volume, err error) {
+func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumes []corev1.Volume) {
 	if ns.Spec.Pvc != nil {
 		volumes = append(volumes, corev1.Volume{
 			Name: "data",
@@ -727,15 +699,6 @@ func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alph
 		})
 	}
 	if ns.Spec.ApplicationConfig != nil && ns.Spec.ApplicationConfig.Name != "" {
-		cm := &corev1.ConfigMap{}
-		err = r.Get(context.TODO(), types.NamespacedName{
-			Namespace: ns.Namespace,
-			Name:      ns.Spec.ApplicationConfig.Name,
-		}, cm)
-		if err != nil {
-			return nil, err
-		}
-
 		volumes = append(volumes, corev1.Volume{
 			Name: "conf",
 			VolumeSource: corev1.VolumeSource{
@@ -750,7 +713,8 @@ func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alph
 	return
 }
 
-func (r *NacosStandaloneReconciler) generateVolumeMountsForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumeMounts []corev1.VolumeMount, err error) {
+func (r *NacosStandaloneReconciler) generateVolumeMountsForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumeMounts []corev1.VolumeMount) {
+	volumeMounts = []corev1.VolumeMount{}
 	if ns.Spec.Pvc != nil {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "data",
@@ -778,36 +742,43 @@ func (r *NacosStandaloneReconciler) generateVolumeMountsForDeployment(ns *nacosv
 }
 
 func (r *NacosStandaloneReconciler) checkVolumeChanged(dep *appsv1.Deployment, ns *nacosv1alpha1.NacosStandalone) (changed bool) {
-	var data, conf *corev1.Volume
+	var dataExisted, confExisted bool
 	for _, item := range dep.Spec.Template.Spec.Volumes {
 		if item.Name == "data" {
-			data = &item
+			dataExisted = true
 		} else if item.Name == "conf" {
-			conf = &item
+			confExisted = true
 		}
 	}
-	if (ns.Spec.Pvc != nil && data == nil) || (ns.Spec.Pvc == nil && data != nil) {
+	if (ns.Spec.Pvc != nil && !dataExisted) || (ns.Spec.Pvc == nil && dataExisted) {
 		return true
 	}
 
-	if (ns.Spec.ApplicationConfig != nil && conf == nil) || (ns.Spec.ApplicationConfig == nil && conf != nil) {
+	if (ns.Spec.ApplicationConfig != nil && !confExisted) || (ns.Spec.ApplicationConfig == nil && confExisted) {
 		return true
 	}
 	return
 }
 
-func (r *NacosStandaloneReconciler) processJvmOptionsForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool, err error) {
-	if ns.Spec.JvmOptions != "" {
-		newEnv := []corev1.EnvVar{{Name: "JAVA_OPT", Value: ns.Spec.JvmOptions}}
-		for _, envVar := range dep.Spec.Template.Spec.Containers[0].Env {
-			if envVar.Name != "JAVA_OPT" {
-				newEnv = append(newEnv, envVar)
-			}
+func (r *NacosStandaloneReconciler) processJvmOptionsForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool) {
+	var newEnv []corev1.EnvVar
+	var existed *corev1.EnvVar
+	for _, envVar := range dep.Spec.Template.Spec.Containers[0].Env {
+		if envVar.Name != "JAVA_OPT" {
+			newEnv = append(newEnv, envVar)
+		} else {
+			existed = &envVar
 		}
-
+	}
+	if ns.Spec.JvmOptions != "" {
+		if existed != nil && ns.Spec.JvmOptions == existed.Value {
+			return false
+		}
+		dep.Spec.Template.Spec.Containers[0].Env = append(newEnv, corev1.EnvVar{Name: "JAVA_OPT", Value: ns.Spec.JvmOptions})
+		needUpdate = true
+	} else if existed != nil {
+		needUpdate = true
 		dep.Spec.Template.Spec.Containers[0].Env = newEnv
-
-		return true, nil
 	}
 	return
 }
