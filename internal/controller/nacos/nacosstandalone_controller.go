@@ -22,6 +22,7 @@ import (
 	"fmt"
 	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
+	"github.com/YunWZ/nacos-operator/internal/util"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -67,7 +68,7 @@ func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	err := r.Get(ctx, req.NamespacedName, ns)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			r.Log.Info("NacosStandalone resource not found. Try to delete refrence resources.")
+			r.Log.Info("NacosStandalone resource not found. Try to delete all referenced resources.", "NacosStandalone", req.NamespacedName)
 			if err = r.deleteResourcesForNacosStandalone(ctx, req); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -176,6 +177,7 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 						LivenessProbe:  ns.Spec.LivenessProbe,
 						ReadinessProbe: ns.Spec.ReadinessProbe,
 						StartupProbe:   ns.Spec.StartupProbe,
+						Resources:      ns.Spec.Resources,
 					}},
 					ImagePullSecrets: ns.Spec.ImagePullSecrets,
 				},
@@ -270,17 +272,17 @@ func (r *NacosStandaloneReconciler) deleteService(ns types.NamespacedName) error
 }
 
 func (r *NacosStandaloneReconciler) deleteResourcesForNacosStandalone(ctx context.Context, req ctrl.Request) (err error) {
-	r.Log.Info("Try to delete deployment resources")
+	r.Log.Info("Try to delete deployment resources.", "NacosStandalone", req.NamespacedName)
 	if err = r.deleteDeployment(req.NamespacedName); client.IgnoreNotFound(err) != nil {
 		return err
 	}
 
-	r.Log.Info("Try to delete service resources")
+	r.Log.Info("Try to delete service resources.", "NacosStandalone", req.NamespacedName)
 	if err = r.deleteService(req.NamespacedName); client.IgnoreNotFound(err) != nil {
 		return err
 	}
 
-	r.Log.Info("Try to delete pvc resources")
+	r.Log.Info("Try to delete pvc resources.", "NacosStandalone", req.NamespacedName)
 	err = r.deletePVC(req.NamespacedName)
 	return client.IgnoreNotFound(err)
 }
@@ -311,6 +313,7 @@ func (r *NacosStandaloneReconciler) checkPVCExist(ns *nacosv1alpha1.NacosStandal
 }
 
 func (r *NacosStandaloneReconciler) completePVCForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
+	r.Log.Info("Try to completePVCForNacosStandalone.", "NacosStandalone", types.NamespacedName{Name: ns.Name, Namespace: ns.Namespace})
 	// Needed to delete pvc.
 	if ns.Spec.Pvc == nil {
 		return false, nil
@@ -348,6 +351,7 @@ func (r *NacosStandaloneReconciler) completePVCForNacosStandalone(ns *nacosv1alp
 }
 
 func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
+	r.Log.Info("Try to completeDeploymentForNacosStandalone", "NacosStandalone", types.NamespacedName{Name: ns.Name, Namespace: ns.Namespace})
 	found := &appsv1.Deployment{}
 	err = r.Get(context.TODO(), types.NamespacedName{
 		Namespace: ns.Namespace,
@@ -409,6 +413,11 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 		found.Spec.Template.Spec.Containers[0].StartupProbe = ns.Spec.StartupProbe
 	}
 
+	if !reflect.DeepEqual(ns.Spec.Resources, found.Spec.Template.Spec.Containers[0].Resources) {
+		needUpdate = true
+		found.Spec.Template.Spec.Containers[0].Resources = ns.Spec.Resources
+	}
+
 	if needUpdate {
 		if err = r.Update(context.TODO(), found); err != nil {
 			r.Log.Error(err, "Failed to update Deployment, Deployment.Namespace: %s, Deployment.Name: %s", found.Namespace, found.Name)
@@ -422,6 +431,7 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 }
 
 func (r *NacosStandaloneReconciler) completeServiceForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (requeue bool, err error) {
+	r.Log.Info("Try to completeServiceForNacosStandalone.", "NacosStandalone", types.NamespacedName{Name: ns.Name, Namespace: ns.Namespace})
 	svc := &corev1.Service{}
 	err = r.Get(context.TODO(), types.NamespacedName{
 		Namespace: ns.Namespace,
@@ -465,6 +475,7 @@ func (r *NacosStandaloneReconciler) deletePVC(name types.NamespacedName) error {
 }
 
 func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+	r.Log.Info("Try to updateStatusForNacosStandalone.", "NacosStandalone", types.NamespacedName{Name: ns.Name, Namespace: ns.Namespace})
 	dep := &appsv1.Deployment{}
 	err := r.Get(context.TODO(), types.NamespacedName{Namespace: ns.Namespace, Name: ns.Name}, dep)
 	if err != nil && apierrors.IsNotFound(err) {
@@ -513,6 +524,7 @@ func (r *NacosStandaloneReconciler) updateStatusForNacosStandalone(ns *nacosv1al
 }
 
 func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (bool, error) {
+	r.Log.Info("Try to completeProbeForNacosStandalone.", "NacosStandalone", types.NamespacedName{Name: ns.Name, Namespace: ns.Namespace})
 	needUpdate := false
 	if ns.Spec.LivenessProbe == nil {
 		needUpdate = true
@@ -572,7 +584,7 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 	}
 
 	if needUpdate {
-		r.Log.Info("Update NacosStandalone with default probes.")
+		r.Log.Info("Update NacosStandalone with default probes.", "NacosStandalone", types.NamespacedName{Name: ns.Name, Namespace: ns.Namespace})
 		err := r.Update(context.TODO(), ns)
 		if err != nil && apierrors.IsNotFound(err) {
 			return false, err
@@ -586,36 +598,65 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 
 func (r *NacosStandaloneReconciler) processDatabaseEnvForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool) {
 	// TODO: Maybe could support others database.
-	var env []corev1.EnvVar
-	if ns.Spec.Database != nil {
+	var newEnv, oldDbEnv []corev1.EnvVar
+	oldEnv := dep.Spec.Template.Spec.Containers[0].Env
+	for _, item := range oldEnv {
+		switch item.Name {
+		case constants.EnvDBNum, constants.EnvDBPassword, constants.EnvDatabasePlatform, constants.EnvDBUser:
+			oldDbEnv = append(oldDbEnv, item)
+			continue
+		}
+		if strings.HasPrefix(item.Name, constants.EnvDBUrlPrefix) {
+			oldDbEnv = append(oldDbEnv, item)
+		} else {
+			newEnv = append(newEnv, item)
+		}
+	}
+
+	existed := len(oldDbEnv) != 0
+	if !existed {
+		if ns.Spec.Database == nil {
+			return false
+		}
+
+		newDbEnv := r.generateDataBaseEnvForMysql(ns)
+		newEnv = append(newEnv, newDbEnv...)
 		needUpdate = true
+	} else {
+		if ns.Spec.Database == nil {
+			needUpdate = true
+		} else {
+			newDbEnv := r.generateDataBaseEnvForMysql(ns)
+			if !util.EnvVarsEqual(oldDbEnv, newDbEnv) {
+				newEnv = append(newEnv, newDbEnv...)
+				needUpdate = true
+			}
+		}
+	}
+
+	/*	if existed && ns.Spec.Database != nil {
 		if ns.Spec.Database.Mysql != nil {
-			env = r.generateDataBaseEnvForMysql(ns)
+			newDbEnv := r.generateDataBaseEnvForMysql(ns)
+			if !util.EnvVarsEqual(oldDbEnv, newDbEnv) {
+				newEnv = append(newEnv, newDbEnv...)
+			}
 		} else {
 			r.Log.Info("Unsupported database type for NacosStandalone, check your database spec")
 			return false
 		}
-	}
+	}*/
 
 	if needUpdate {
-		oldEnv := dep.Spec.Template.Spec.Containers[0].Env
-		for _, item := range oldEnv {
-			switch item.Name {
-			case constants.EnvDBNum, constants.EnvDBPassword, constants.EnvDatabasePlatform, constants.EnvDBUser:
-				continue
-			}
-			if strings.HasPrefix(item.Name, constants.EnvDBUrlPrefix) {
-				continue
-			}
-			env = append(env, item)
-		}
-		dep.Spec.Template.Spec.Containers[0].Env = env
+		dep.Spec.Template.Spec.Containers[0].Env = newEnv
 	}
 
 	return needUpdate
 }
 
 func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha1.NacosStandalone) (envs []corev1.EnvVar) {
+	if ns.Spec.Database == nil {
+		return
+	}
 	envs = append(envs, corev1.EnvVar{
 		Name:  constants.EnvDatabasePlatform,
 		Value: "mysql",
