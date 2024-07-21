@@ -172,7 +172,7 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 							},
 						},
 						Env: []corev1.EnvVar{
-							{Name: "MODE", Value: "standalone"},
+							{Name: constants.EnvMode, Value: constants.NacosModeStandalone},
 						},
 						LivenessProbe:  ns.Spec.LivenessProbe,
 						ReadinessProbe: ns.Spec.ReadinessProbe,

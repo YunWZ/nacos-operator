@@ -33,4 +33,10 @@ const (
 	EnvDBUser           = "db.user"
 	EnvDBPassword       = "db.password"
 	EnvDBUrlPrefix      = "db.url."
+	EnvMode             = "MODE"
+)
+
+const (
+	NacosModeStandalone = "standalone"
+	NacosModeCluster    = "cluster"
 )
