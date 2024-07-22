@@ -38,7 +38,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var size = int32(1)
@@ -53,8 +52,8 @@ type NacosStandaloneReconciler struct {
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=pods;configmaps,verbs=get;list;
-// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list,watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list,watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -83,44 +82,40 @@ func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	requeue, err := r.completeProbeForNacosStandalone(ns)
 	if err != nil {
-		return r.newResult(requeue), err
+		return util.NewResult(requeue), err
 	} else if requeue {
-		return r.newResult(true), nil
+		return util.NewResult(true), nil
 	}
 
 	requeue, err = r.completePVCForNacosStandalone(ns)
 	if err != nil {
-		return r.newResult(requeue), err
+		return util.NewResult(requeue), err
 	} else if requeue {
-		return r.newResult(true), nil
+		return util.NewResult(true), nil
 	}
 
 	requeue, err = r.completeDeploymentForNacosStandalone(ns)
 	if err != nil {
-		return r.newResult(requeue), err
+		return util.NewResult(requeue), err
 	} else if requeue {
-		return r.newResult(true), nil
+		return util.NewResult(true), nil
 	}
 
 	requeue, err = r.completeServiceForNacosStandalone(ns)
 	if err != nil {
-		return r.newResult(requeue), err
+		return util.NewResult(requeue), err
 	} else if requeue {
-		return r.newResult(true), nil
+		return util.NewResult(true), nil
 	}
 
 	requeue, err = r.updateStatusForNacosStandalone(ns)
 	if err != nil {
-		return r.newResult(requeue), err
+		return util.NewResult(requeue), err
 	} else if requeue {
-		return r.newResult(true), nil
+		return util.NewResult(true), nil
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func (r *NacosStandaloneReconciler) newResult(requeue bool) ctrl.Result {
-	return ctrl.Result{Requeue: requeue, RequeueAfter: time.Second * 3}
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -528,59 +523,17 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 	needUpdate := false
 	if ns.Spec.LivenessProbe == nil {
 		needUpdate = true
-		ns.Spec.LivenessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: constants.DefaultNacosLivenessPath,
-					Port: intstr.FromString(constants.DefaultNacosServerHttpPortName),
-					//Host:   "127.0.0.1",
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       5,
-			TimeoutSeconds:      10,
-			SuccessThreshold:    1,
-			FailureThreshold:    5,
-		}
+		ns.Spec.LivenessProbe = util.NewDefaultLivenessProbe()
 	}
 
 	if ns.Spec.ReadinessProbe == nil {
 		needUpdate = true
-		ns.Spec.ReadinessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: constants.DefaultNacosReadinessPath,
-					Port: intstr.FromString(constants.DefaultNacosServerHttpPortName),
-					//Host:   "127.0.0.1",
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       5,
-			TimeoutSeconds:      3,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-		}
+		ns.Spec.ReadinessProbe = util.NewDefaultReadinessProbe()
 	}
 
 	if ns.Spec.StartupProbe == nil {
 		needUpdate = true
-		ns.Spec.StartupProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: constants.DefaultNacosReadinessPath,
-					Port: intstr.FromString(constants.DefaultNacosServerHttpPortName),
-					//Host:   "127.0.0.1",
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       10,
-			TimeoutSeconds:      5,
-			SuccessThreshold:    1,
-			FailureThreshold:    50,
-		}
+		ns.Spec.StartupProbe = util.NewDefaultStartupProbe()
 	}
 
 	if needUpdate {
