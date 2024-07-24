@@ -19,8 +19,12 @@ resources:
   domain: yunweizhan.com.cn
   group: nacos
   kind: NacosCluster
-  path: github.com/YunWZ/nacos-operator/api/v1alpha1
+  path: github.com/YunWZ/nacos-operator/api/nacos/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -30,4 +34,8 @@ resources:
   kind: NacosStandalone
   path: github.com/YunWZ/nacos-operator/api/nacos/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 version: "3"
