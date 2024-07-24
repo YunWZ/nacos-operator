@@ -19,7 +19,6 @@ package nacos
 import (
 	"context"
 	"errors"
-	"fmt"
 	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
 	"github.com/YunWZ/nacos-operator/internal/util"
@@ -30,17 +29,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sort"
-	"strconv"
-	"strings"
 )
 
-var size = int32(1)
+var (
+	zero      = int32(0)
+	one       = int32(1)
+	bool_true = true
+)
 
 // NacosStandaloneReconciler reconciles a NacosStandalone object
 type NacosStandaloneReconciler struct {
@@ -132,7 +132,7 @@ func (r *NacosStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (dep *appsv1.Deployment) {
 	ls := labelsForNacosStandalone(ns)
-	replicas := size
+	replicas := one
 	dep = &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ns.Name,
@@ -194,7 +194,7 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 
 	_ = r.processDatabaseEnvForDeployment(ns, dep)
 
-	_ = r.processJvmOptionsForDeployment(ns, dep)
+	_ = util.ProcessJvmOptionsEnvForDeployment(ns.Spec.JvmOptions, dep)
 
 	return dep
 }
@@ -204,38 +204,7 @@ func (r *NacosStandaloneReconciler) generatePVCName(name string) string {
 }
 
 func (r *NacosStandaloneReconciler) serviceForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) (svc *corev1.Service) {
-	ls := labelsForNacosStandalone(ns)
-	svc = &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: ns.Name, Namespace: ns.Namespace, Labels: ls},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{
-					Name:       constants.DefaultNacosServerHttpPortName,
-					TargetPort: intstr.FromString(constants.DefaultNacosServerHttpPortName),
-					Port:       constants.DefaultNacosServerHttpPort,
-				},
-				{
-					Name:       constants.DefaultNacosServerGrpcPortName,
-					TargetPort: intstr.FromString(constants.DefaultNacosServerGrpcPortName),
-					Port:       constants.DefaultNacosServerGrpcPort,
-				},
-				{
-					Name:       constants.DefaultNacosServerRaftPortName,
-					TargetPort: intstr.FromString(constants.DefaultNacosServerRaftPortName),
-					Port:       constants.DefaultNacosServerRaftPort,
-				},
-				{
-					Name:       constants.DefaultNacosServerPeerToPeerPortName,
-					TargetPort: intstr.FromString(constants.DefaultNacosServerPeerToPeerPortName),
-					Port:       constants.DefaultNacosServerPeerToPeerPort,
-				},
-			},
-			Selector: ls,
-			Type:     ns.Spec.Service.Type,
-		},
-	}
-
-	return
+	return util.GenerateNormalService(ns.Namespace, ns.Name, ns.Spec.Service.Type, labelsForNacosCluster(ns.Name))
 }
 
 func (r *NacosStandaloneReconciler) deleteDeployment(ns types.NamespacedName) error {
@@ -388,11 +357,11 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 		found.Spec.Template.Spec.Containers[0].VolumeMounts = mounts
 	}
 
-	needUpdate = r.processJvmOptionsForDeployment(ns, found) || needUpdate
+	needUpdate = util.ProcessJvmOptionsEnvForDeployment(ns.Spec.JvmOptions, found) || needUpdate
 
-	if *found.Spec.Replicas != size {
+	if *found.Spec.Replicas != one {
 		needUpdate = true
-		found.Spec.Replicas = &size
+		found.Spec.Replicas = &one
 	}
 
 	if ns.Spec.ReadinessProbe != nil && !reflect.DeepEqual(ns.Spec.ReadinessProbe, found.Spec.Template.Spec.Containers[0].ReadinessProbe) {
@@ -550,63 +519,10 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 }
 
 func (r *NacosStandaloneReconciler) processDatabaseEnvForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool) {
-	// TODO: Maybe could support others database.
-	var newEnv, oldDbEnv []corev1.EnvVar
-	oldEnv := dep.Spec.Template.Spec.Containers[0].Env
-	for _, item := range oldEnv {
-		switch item.Name {
-		case constants.EnvDBNum, constants.EnvDBPassword, constants.EnvDatabasePlatform, constants.EnvDBUser:
-			oldDbEnv = append(oldDbEnv, item)
-			continue
-		}
-		if strings.HasPrefix(item.Name, constants.EnvDBUrlPrefix) {
-			oldDbEnv = append(oldDbEnv, item)
-		} else {
-			newEnv = append(newEnv, item)
-		}
-	}
-
-	existed := len(oldDbEnv) != 0
-	if !existed {
-		if ns.Spec.Database == nil {
-			return false
-		}
-
-		newDbEnv := r.generateDataBaseEnvForMysql(ns)
-		newEnv = append(newEnv, newDbEnv...)
-		needUpdate = true
-	} else {
-		if ns.Spec.Database == nil {
-			needUpdate = true
-		} else {
-			newDbEnv := r.generateDataBaseEnvForMysql(ns)
-			if !util.EnvVarsEqual(oldDbEnv, newDbEnv) {
-				newEnv = append(newEnv, newDbEnv...)
-				needUpdate = true
-			}
-		}
-	}
-
-	/*	if existed && ns.Spec.Database != nil {
-		if ns.Spec.Database.Mysql != nil {
-			newDbEnv := r.generateDataBaseEnvForMysql(ns)
-			if !util.EnvVarsEqual(oldDbEnv, newDbEnv) {
-				newEnv = append(newEnv, newDbEnv...)
-			}
-		} else {
-			r.Log.Info("Unsupported database type for NacosStandalone, check your database spec")
-			return false
-		}
-	}*/
-
-	if needUpdate {
-		dep.Spec.Template.Spec.Containers[0].Env = newEnv
-	}
-
-	return needUpdate
+	return util.ProcessDatabaseEnvForDeployment(ns.Namespace, ns.Name, ns.Spec.Database, dep)
 }
 
-func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha1.NacosStandalone) (envs []corev1.EnvVar) {
+/*func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha1.NacosStandalone) (envs []corev1.EnvVar) {
 	if ns.Spec.Database == nil {
 		return
 	}
@@ -678,7 +594,7 @@ func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha
 	}
 
 	return
-}
+}*/
 
 func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumes []corev1.Volume) {
 	if ns.Spec.Pvc != nil {
@@ -708,7 +624,8 @@ func (r *NacosStandaloneReconciler) generateVolumesForDeployment(ns *nacosv1alph
 }
 
 func (r *NacosStandaloneReconciler) generateVolumeMountsForDeployment(ns *nacosv1alpha1.NacosStandalone) (volumeMounts []corev1.VolumeMount) {
-	volumeMounts = []corev1.VolumeMount{}
+	return util.GenerateVolumeMountsForDeployment(ns.Spec.Pvc, ns.Spec.ApplicationConfig)
+	/*volumeMounts = []corev1.VolumeMount{}
 	if ns.Spec.Pvc != nil {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "data",
@@ -732,50 +649,13 @@ func (r *NacosStandaloneReconciler) generateVolumeMountsForDeployment(ns *nacosv
 		})
 	}
 
-	return
+	return*/
 }
 
 func (r *NacosStandaloneReconciler) checkVolumeChanged(dep *appsv1.Deployment, ns *nacosv1alpha1.NacosStandalone) (changed bool) {
-	var dataExisted, confExisted bool
-	for _, item := range dep.Spec.Template.Spec.Volumes {
-		if item.Name == "data" {
-			dataExisted = true
-		} else if item.Name == "conf" {
-			confExisted = true
-		}
-	}
-	if (ns.Spec.Pvc != nil && !dataExisted) || (ns.Spec.Pvc == nil && dataExisted) {
-		return true
-	}
-
-	if (ns.Spec.ApplicationConfig != nil && !confExisted) || (ns.Spec.ApplicationConfig == nil && confExisted) {
-		return true
-	}
-	return
+	return util.CheckVolumeChanged(dep, ns.Spec.Pvc, ns.Spec.ApplicationConfig)
 }
 
-func (r *NacosStandaloneReconciler) processJvmOptionsForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool) {
-	var newEnv []corev1.EnvVar
-	var existed *corev1.EnvVar
-	for _, envVar := range dep.Spec.Template.Spec.Containers[0].Env {
-		if envVar.Name != "JAVA_OPT" {
-			newEnv = append(newEnv, envVar)
-		} else {
-			existed = &envVar
-		}
-	}
-	if ns.Spec.JvmOptions != "" {
-		if existed != nil && ns.Spec.JvmOptions == existed.Value {
-			return false
-		}
-		dep.Spec.Template.Spec.Containers[0].Env = append(newEnv, corev1.EnvVar{Name: "JAVA_OPT", Value: ns.Spec.JvmOptions})
-		needUpdate = true
-	} else if existed != nil {
-		needUpdate = true
-		dep.Spec.Template.Spec.Containers[0].Env = newEnv
-	}
-	return
-}
 func labelsForNacosStandalone(ns *nacosv1alpha1.NacosStandalone) map[string]string {
 	return map[string]string{constants.LabelNacosStandalone: ns.Name, constants.LabelApp: ns.Name}
 }

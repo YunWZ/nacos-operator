@@ -34,9 +34,14 @@ const (
 	EnvDBPassword       = "db.password"
 	EnvDBUrlPrefix      = "db.url."
 	EnvMode             = "MODE"
+	EnvMemberList       = "MEMBER_LIST"
 )
 
 const (
 	NacosModeStandalone = "standalone"
 	NacosModeCluster    = "cluster"
+)
+
+const (
+	NodeLabelHostName = "kubernetes.io/hostname"
 )

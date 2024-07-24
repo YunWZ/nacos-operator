@@ -104,6 +104,7 @@ func main() {
 	if err = (&nacoscontroller.NacosClusterReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("controllers").WithName("NacosCluster"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NacosCluster")
 		os.Exit(1)
