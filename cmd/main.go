@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -95,6 +96,13 @@ func main() {
 		// LeaderElectionReleaseOnCancel: true,
 		Cache: cache.Options{Namespaces: strings.Split(namespace, ",")},
 	}
+	enableWebhooks := getEnableWebhooks()
+	if enableWebhooks != "false" {
+		certDir := getCertDir()
+		if certDir != "" {
+			options.WebhookServer = webhook.NewServer(webhook.Options{CertDir: certDir})
+		}
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
@@ -119,14 +127,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&nacosv1alpha1.NacosCluster{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "NacosCluster")
-		os.Exit(1)
+	if enableWebhooks != "false" {
+		if err = (&nacosv1alpha1.NacosCluster{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "NacosCluster")
+			os.Exit(1)
+		}
+		if err = (&nacosv1alpha1.NacosStandalone{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "NacosStandalone")
+			os.Exit(1)
+		}
 	}
-	if err = (&nacosv1alpha1.NacosStandalone{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "NacosStandalone")
-		os.Exit(1)
-	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -153,4 +164,13 @@ func getWatchNamespace() (string, error) {
 	}
 
 	return ns, nil
+}
+
+func getCertDir() string {
+	certDirectory := os.Getenv("CERTSDIR")
+	return certDirectory
+}
+
+func getEnableWebhooks() string {
+	return os.Getenv("ENABLE_WEBHOOKS")
 }

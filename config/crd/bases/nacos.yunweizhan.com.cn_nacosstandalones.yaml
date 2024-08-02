@@ -677,7 +677,7 @@ spec:
               service:
                 properties:
                   type:
-                    default: ClusterIp
+                    default: ClusterIP
                     description: Service Type string describes ingress methods for
                       a service
                     type: string

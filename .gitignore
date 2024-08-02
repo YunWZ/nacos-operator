@@ -24,3 +24,5 @@ Dockerfile.cross
 *.swp
 *.swo
 *~
+ca/*
+config/webhook/manifests.yaml.local

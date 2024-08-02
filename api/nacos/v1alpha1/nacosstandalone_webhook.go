@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -43,7 +44,21 @@ var _ webhook.Defaulter = &NacosStandalone{}
 func (r *NacosStandalone) Default() {
 	nacosstandalonelog.Info("default", "name", r.Name)
 
-	// TODO(user): fill in your defaulting logic.
+	if r.Spec.Image == "" {
+		r.Spec.Image = DefaultImage
+	}
+
+	if r.Spec.LivenessProbe == nil {
+		r.Spec.LivenessProbe = NewDefaultLivenessProbe()
+	}
+
+	if r.Spec.ReadinessProbe == nil {
+		r.Spec.ReadinessProbe = NewDefaultReadinessProbe()
+	}
+
+	if r.Spec.StartupProbe == nil {
+		r.Spec.StartupProbe = NewDefaultStartupProbe()
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
@@ -55,22 +70,44 @@ var _ webhook.Validator = &NacosStandalone{}
 func (r *NacosStandalone) ValidateCreate() (admission.Warnings, error) {
 	nacosstandalonelog.Info("validate create", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object creation.
-	return nil, nil
+	return r.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NacosStandalone) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	nacosstandalonelog.Info("validate update", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object update.
-	return nil, nil
+	return r.validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *NacosStandalone) ValidateDelete() (admission.Warnings, error) {
 	nacosstandalonelog.Info("validate delete", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object deletion.
 	return nil, nil
+}
+
+func (r *NacosStandalone) validate() (warnings admission.Warnings, err error) {
+	nacosclusterlog.Info("validate update", "name", r.Name)
+
+	if r.Spec.Image == "" {
+		err = errors.New("image must be specified")
+	}
+
+	if r.Spec.LivenessProbe == nil {
+		warnings = append(warnings, "livenessProbe is required")
+		err = errors.New("livenessProbe is required")
+	}
+
+	if r.Spec.ReadinessProbe == nil {
+		warnings = append(warnings, "readinessProbe is required")
+		err = errors.New("readinessProbe is required")
+	}
+
+	if r.Spec.StartupProbe == nil {
+		warnings = append(warnings, "startupProbe is required")
+		err = errors.New("startupProbe is required")
+	}
+
+	return
 }

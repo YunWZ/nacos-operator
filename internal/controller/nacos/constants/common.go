@@ -14,7 +14,6 @@ const (
 	LabelNacosStandalone = "nacos.yunweizhan.com.cn/nacos-standalone"
 	LabelNacosCluster    = "nacos.yunweizhan.com.cn/nacos-cluster"
 	LabelApp             = "app"
-	DefaultImage         = "docker.io/nacos/nacos-server"
 
 	DefaultNacosLivenessPath  = "/nacos/v2/console/health/liveness"
 	DefaultNacosReadinessPath = "/nacos/v2/console/health/readiness"
@@ -28,13 +27,16 @@ const (
 )
 
 const (
-	EnvDatabasePlatform = "spring.datasource.platform"
-	EnvDBNum            = "db.num"
-	EnvDBUser           = "db.user"
-	EnvDBPassword       = "db.password"
-	EnvDBUrlPrefix      = "db.url."
-	EnvMode             = "MODE"
-	EnvMemberList       = "MEMBER_LIST"
+	EnvDatabasePlatform               = "spring.datasource.platform"
+	EnvDBNum                          = "db.num"
+	EnvDBUser                         = "db.user"
+	EnvDBPassword                     = "db.password"
+	EnvDBUrlPrefix                    = "db.url."
+	EnvMode                           = "MODE"
+	EnvNacosServers                   = "NACOS_SERVERS"
+	EnvPreferHostName                 = "PREFER_HOST_MODE"
+	EnvPreferHostNameValueForHostname = "hostname"
+	EnvPreferHostNameValueForIP       = "ip"
 )
 
 const (

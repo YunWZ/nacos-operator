@@ -146,7 +146,7 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 				ObjectMeta: metav1.ObjectMeta{Labels: ls},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{Name: "nacos-server",
-						Image:           constants.DefaultImage,
+						Image:           nacosv1alpha1.DefaultImage,
 						ImagePullPolicy: ns.Spec.ImagePullPolicy,
 						Ports: []corev1.ContainerPort{
 							{
@@ -492,17 +492,17 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 	needUpdate := false
 	if ns.Spec.LivenessProbe == nil {
 		needUpdate = true
-		ns.Spec.LivenessProbe = util.NewDefaultLivenessProbe()
+		ns.Spec.LivenessProbe = nacosv1alpha1.NewDefaultLivenessProbe()
 	}
 
 	if ns.Spec.ReadinessProbe == nil {
 		needUpdate = true
-		ns.Spec.ReadinessProbe = util.NewDefaultReadinessProbe()
+		ns.Spec.ReadinessProbe = nacosv1alpha1.NewDefaultReadinessProbe()
 	}
 
 	if ns.Spec.StartupProbe == nil {
 		needUpdate = true
-		ns.Spec.StartupProbe = util.NewDefaultStartupProbe()
+		ns.Spec.StartupProbe = nacosv1alpha1.NewDefaultStartupProbe()
 	}
 
 	if needUpdate {

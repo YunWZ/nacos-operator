@@ -30,27 +30,44 @@ type NacosClusterSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty" `
-	// +optional
-	Replicas *int `json:"replicas,omitempty" `
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=0
+	Replicas *int32 `json:"replicas,omitempty"`
 	// +optional
 	Image string `json:"image,omitempty"`
 	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	// +optional
+	// +kubebuilder:default:="IfNotPresent"
+	// +kubebuilder:validation:enum=Always;IfNotPresent;Never
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 	// +optional
-	ImagePullSecret []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" `
+	Service ServiceSpec `json:"service,omitempty"`
 	// +optional
-	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
+	Pvc *corev1.PersistentVolumeClaimSpec `json:"pvc,omitempty"`
 	// +optional
 	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
 	// +optional
 	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
 	// +optional
-	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
+	StartupProbe *corev1.Probe   `json:"startupProbe,omitempty"`
+	Database     *DatabaseSource `json:"database,omitempty"`
 	// +optional
-	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
+	JvmOptions string `json:"jvmOptions,omitempty"`
 	// +optional
-	Service corev1.ServiceSpec `json:"service,omitempty"`
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// +optional
+	ApplicationConfig *corev1.LocalObjectReference `json:"applicationConfig,omitempty"`
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// If specified, the pod's tolerations.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// +optional
+	// +kubebuilder:default:="cluster.local"
+	Domain string `json:"domain,omitempty"`
 }
 
 // NacosClusterStatus defines the observed state of NacosCluster
@@ -60,10 +77,9 @@ type NacosClusterStatus struct {
 	Ready bool `json:"ready"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-
 // NacosCluster is the Schema for the nacosclusters API
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 type NacosCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

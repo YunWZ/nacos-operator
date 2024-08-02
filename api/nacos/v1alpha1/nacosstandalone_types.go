@@ -27,8 +27,8 @@ import (
 
 type ServiceSpec struct {
 	// +optional
-	// +kubebuilder:default="ClusterIp"
-	// +kubebuilder:validation:enum=ClusterIp;NodePort;LoadBalancer
+	// +kubebuilder:default="ClusterIP"
+	// +kubebuilder:validation:enum=ClusterIP;NodePort;LoadBalancer
 	Type corev1.ServiceType `json:"type,omitempty"`
 }
 
@@ -48,6 +48,7 @@ type DatabaseServer struct {
 	DbPort string `json:"dbPort,omitempty"`
 }
 type DatabaseSource struct {
+	// +optional
 	Mysql *MySQLDatabaseSource `json:"mysql,omitempty"`
 }
 
