@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -98,7 +99,7 @@ func (r *NacosClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return util.NewResult(true), nil
 	}
 
-	requeue, err = r.completeDeploymentForNacosCluster(nc)
+	requeue, err = r.completeDeploymentsForNacosCluster(nc)
 	if err != nil {
 		return util.NewResult(requeue), err
 	} else if requeue {
@@ -120,10 +121,6 @@ func (r *NacosClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nacosv1alpha1.NacosCluster{}).
 		Complete(r)
-}
-
-func (r *NacosClusterReconciler) deploymentForNacosCluster(cluster *nacosv1alpha1.NacosCluster, i int) appsv1.Deployment {
-	return appsv1.Deployment{}
 }
 
 func (r *NacosClusterReconciler) deleteResourcesForNacosCluster(ctx context.Context, req ctrl.Request) (err error) {
@@ -276,7 +273,7 @@ func (r *NacosClusterReconciler) persistentVolumeClaimForNacosCluster(nc *nacosv
 	}
 }
 
-func (r *NacosClusterReconciler) completeDeploymentForNacosCluster(nc *nacosv1alpha1.NacosCluster) (requeue bool, err error) {
+func (r *NacosClusterReconciler) completeDeploymentsForNacosCluster(nc *nacosv1alpha1.NacosCluster) (requeue bool, err error) {
 	if nc.Spec.Replicas == nil || *nc.Spec.Replicas == zero {
 		err := r.DeleteAllOf(context.TODO(), &appsv1.Deployment{}, client.InNamespace(nc.Namespace), client.MatchingLabels(labelsForNacosCluster(nc.Name)))
 		if err != nil {
@@ -293,42 +290,45 @@ func (r *NacosClusterReconciler) completeDeploymentForNacosCluster(nc *nacosv1al
 
 	oldDeps := deps.Items
 	sort.Slice(oldDeps, func(i, j int) bool { return oldDeps[i].Name < oldDeps[j].Name })
-	curSize := int32(len(oldDeps))
+	depMap := listToMap(deps.Items...)
 	memberList := generateMemberList(nc)
 	for i := zero; i < *nc.Spec.Replicas; i++ {
 		curDepName := generateDeploymentNameForNacosCluster(nc.Name, i)
-		//Already existed
-		if i < curSize {
-			curDep := &oldDeps[i]
-			if curDepName == oldDeps[i].Name {
-				requeue, err = r.updateDeploymentIfNessasery(nc, curDep)
-			} else {
-				err = r.Delete(context.TODO(), &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: curDepName, Namespace: nc.Namespace}})
-				if err != nil && !apierrors.IsNotFound(err) {
-					return true, err
-				}
-			}
-			continue
-		}
 
-		err = r.Create(context.TODO(), r.generateDeploymentForNacosCluster(nc, curDepName, i, memberList))
-		if err != nil && !apierrors.IsAlreadyExists(err) {
-			return true, err
-		}
-		requeue = true
-	}
-
-	if curSize > *nc.Spec.Replicas {
-		requeue = true
-		for i := *nc.Spec.Replicas; i < curSize; i++ {
-			err = r.Delete(context.TODO(), &oldDeps[i])
-			if err != nil && !apierrors.IsNotFound(err) {
+		if curDep, exist := depMap[curDepName]; !exist {
+			err = r.Create(context.TODO(), r.generateDeploymentForNacosCluster(nc, curDepName, i, memberList))
+			if err != nil && !apierrors.IsAlreadyExists(err) {
 				return true, err
 			}
+		} else {
+			requeue, err = r.completeDeploymentForNacosCluster(nc, curDep, i, memberList)
+			if requeue {
+				return requeue, err
+			} else {
+				delete(depMap, curDepName)
+			}
 		}
 	}
 
-	return requeue, nil
+	//delete others deployment
+	for _, v := range depMap {
+		err = r.Delete(context.TODO(), v)
+		if err != nil && !apierrors.IsNotFound(err) {
+			r.Log.Error(err, "Delete Deployment failed.")
+			return true, err
+		}
+	}
+
+	return requeue, err
+}
+
+func listToMap(items ...appsv1.Deployment) map[string]*appsv1.Deployment {
+	depMap := make(map[string]*appsv1.Deployment, len(items))
+	for index, dep := range items {
+		depMap[dep.Name] = &items[index]
+	}
+
+	return depMap
 }
 
 func (r *NacosClusterReconciler) generateDeploymentForNacosCluster(nc *nacosv1alpha1.NacosCluster, depName string, index int32, memberList string) *appsv1.Deployment {
@@ -400,7 +400,7 @@ func (r *NacosClusterReconciler) generateDeploymentForNacosCluster(nc *nacosv1al
 
 	dep.Spec.Template.Spec.Volumes = r.generateVolumesForDeployment(nc, index)
 
-	dep.Spec.Template.Spec.Containers[0].VolumeMounts = generateVolumeMountsForDeployment(nc)
+	dep.Spec.Template.Spec.Containers[0].VolumeMounts = r.generateVolumeMountsForDeployment(nc)
 
 	//var needUpdate bool
 	_ = util.ProcessDatabaseEnvForDeployment(nc.Namespace, nc.Name, nc.Spec.Database, dep)
@@ -409,34 +409,6 @@ func (r *NacosClusterReconciler) generateDeploymentForNacosCluster(nc *nacosv1al
 
 	_ = r.processMemberListEnvForDeployment(nc, dep, memberList)
 	return dep
-}
-
-func generateVolumeMountsForDeployment(nc *nacosv1alpha1.NacosCluster) (volumeMounts []corev1.VolumeMount) {
-	volumeMounts = []corev1.VolumeMount{}
-	if nc.Spec.Pvc != nil {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "data",
-			ReadOnly:  false,
-			MountPath: "/home/nacos/data",
-			SubPath:   "data",
-		})
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "data",
-			ReadOnly:  false,
-			MountPath: "/home/nacos/logs",
-			SubPath:   "logs",
-		})
-	}
-
-	if nc.Spec.ApplicationConfig != nil && nc.Spec.ApplicationConfig.Name != "" {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "conf",
-			ReadOnly:  true,
-			MountPath: "/home/nacos/conf",
-		})
-	}
-
-	return
 }
 
 func (r *NacosClusterReconciler) generateVolumesForDeployment(nc *nacosv1alpha1.NacosCluster, index int32) (volumes []corev1.Volume) {
@@ -528,32 +500,105 @@ func (r *NacosClusterReconciler) completeServiceForNacosCluster(nc *nacosv1alpha
 	return requeue, nil
 }
 
-func (r *NacosClusterReconciler) processMemberListEnvForDeployment(nc *nacosv1alpha1.NacosCluster, dep *appsv1.Deployment, memberList string) (err error) {
+func (r *NacosClusterReconciler) processMemberListEnvForDeployment(nc *nacosv1alpha1.NacosCluster, dep *appsv1.Deployment, memberList string) (needUpdate bool) {
 	oldEnv := dep.Spec.Template.Spec.Containers[0].Env
 	newEnv := []corev1.EnvVar{}
+	var oldMemberListEnv corev1.EnvVar
 	for _, env := range oldEnv {
-		if env.Name != constants.EnvNacosServers {
+		if env.Name == constants.EnvNacosServers {
+			oldMemberListEnv = env
+		} else {
 			newEnv = append(newEnv, env)
 		}
 	}
 
-	newEnv = append(newEnv, corev1.EnvVar{
-		Name:  constants.EnvNacosServers,
-		Value: memberList,
-	})
+	if reflect.DeepEqual(oldMemberListEnv, corev1.EnvVar{}) || oldMemberListEnv.Value != memberList {
+		needUpdate = true
+		newEnv = append(newEnv, corev1.EnvVar{
+			Name:  constants.EnvNacosServers,
+			Value: memberList,
+		})
+		dep.Spec.Template.Spec.Containers[0].Env = newEnv
+	}
 
-	dep.Spec.Template.Spec.Containers[0].Env = newEnv
-	return nil
-}
-
-func (r *NacosClusterReconciler) updateDeploymentIfNessasery(nc *nacosv1alpha1.NacosCluster, dep *appsv1.Deployment) (updated bool, err error) {
-	// TODO
-	return false, err
+	return
 }
 
 func (r *NacosClusterReconciler) updateStatusForNacosCluster(nc *nacosv1alpha1.NacosCluster) (bool, error) {
 	// TODO
 	return false, nil
+}
+
+func (r *NacosClusterReconciler) completeDeploymentForNacosCluster(nc *nacosv1alpha1.NacosCluster, found *appsv1.Deployment, index int32, memberList string) (changed bool, err error) {
+	changed = util.ProcessDatabaseEnvForDeployment(nc.Namespace, nc.Name, nc.Spec.Database, found)
+	changed = r.processMemberListEnvForDeployment(nc, found, memberList) || changed
+
+	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].Image, nc.Spec.Image) {
+		changed = true
+		found.Spec.Template.Spec.Containers[0].Image = nc.Spec.Image
+	}
+	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].ImagePullPolicy, nc.Spec.ImagePullPolicy) {
+		changed = true
+		found.Spec.Template.Spec.Containers[0].ImagePullPolicy = nc.Spec.ImagePullPolicy
+	}
+	if !reflect.DeepEqual(found.Spec.Template.Spec.ImagePullSecrets, nc.Spec.ImagePullSecrets) {
+		changed = true
+		found.Spec.Template.Spec.ImagePullSecrets = nc.Spec.ImagePullSecrets
+	}
+
+	if r.checkVolumeChanged(found, nc) {
+		changed = true
+		volumes := r.generateVolumesForDeployment(nc, index)
+
+		found.Spec.Template.Spec.Volumes = volumes
+		mounts := r.generateVolumeMountsForDeployment(nc)
+
+		found.Spec.Template.Spec.Containers[0].VolumeMounts = mounts
+	}
+
+	changed = util.ProcessJvmOptionsEnvForDeployment(nc.Spec.JvmOptions, found) || changed
+
+	if *found.Spec.Replicas != one {
+		changed = true
+		found.Spec.Replicas = &one
+	}
+
+	if nc.Spec.ReadinessProbe != nil && !reflect.DeepEqual(nc.Spec.ReadinessProbe, found.Spec.Template.Spec.Containers[0].ReadinessProbe) {
+		changed = true
+		found.Spec.Template.Spec.Containers[0].ReadinessProbe = nc.Spec.ReadinessProbe
+	}
+	if nc.Spec.LivenessProbe != nil && !reflect.DeepEqual(nc.Spec.LivenessProbe, found.Spec.Template.Spec.Containers[0].LivenessProbe) {
+		changed = true
+		found.Spec.Template.Spec.Containers[0].LivenessProbe = nc.Spec.LivenessProbe
+	}
+	if nc.Spec.StartupProbe != nil && !reflect.DeepEqual(nc.Spec.StartupProbe, found.Spec.Template.Spec.Containers[0].StartupProbe) {
+		changed = true
+		found.Spec.Template.Spec.Containers[0].StartupProbe = nc.Spec.StartupProbe
+	}
+
+	if !reflect.DeepEqual(nc.Spec.Resources, found.Spec.Template.Spec.Containers[0].Resources) {
+		changed = true
+		found.Spec.Template.Spec.Containers[0].Resources = nc.Spec.Resources
+	}
+
+	if changed {
+		if err = r.Update(context.TODO(), found); err != nil {
+			r.Log.Error(err, "Failed to update Deployment, Deployment.Namespace: %s, Deployment.Name: %s", found.Namespace, found.Name)
+			//return true, err
+		}
+		// Spec updated - return and requeue
+		//return true, nil
+	}
+
+	return changed, err
+}
+
+func (r *NacosClusterReconciler) checkVolumeChanged(found *appsv1.Deployment, nc *nacosv1alpha1.NacosCluster) bool {
+	return util.CheckVolumeChanged(found, nc.Spec.Pvc, nc.Spec.ApplicationConfig)
+}
+
+func (r *NacosClusterReconciler) generateVolumeMountsForDeployment(nc *nacosv1alpha1.NacosCluster) []corev1.VolumeMount {
+	return util.GenerateVolumeMountsForDeployment(nc.Spec.Pvc, nc.Spec.ApplicationConfig)
 }
 
 func generateAffinityForDeployment(nc *nacosv1alpha1.NacosCluster) *corev1.Affinity {

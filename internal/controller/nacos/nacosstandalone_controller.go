@@ -37,9 +37,8 @@ import (
 )
 
 var (
-	zero      = int32(0)
-	one       = int32(1)
-	bool_true = true
+	zero = int32(0)
+	one  = int32(1)
 )
 
 // NacosStandaloneReconciler reconciles a NacosStandalone object
@@ -192,7 +191,7 @@ func (r *NacosStandaloneReconciler) deploymentForNacosStandalone(ns *nacosv1alph
 
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 
-	_ = r.processDatabaseEnvForDeployment(ns, dep)
+	_ = util.ProcessDatabaseEnvForDeployment(ns.Namespace, ns.Name, ns.Spec.Database, dep)
 
 	_ = util.ProcessJvmOptionsEnvForDeployment(ns.Spec.JvmOptions, dep)
 
@@ -332,7 +331,7 @@ func (r *NacosStandaloneReconciler) completeDeploymentForNacosStandalone(ns *nac
 		return true, err
 	}
 
-	needUpdate := r.processDatabaseEnvForDeployment(ns, found)
+	needUpdate := util.ProcessDatabaseEnvForDeployment(ns.Namespace, ns.Name, ns.Spec.Database, found)
 
 	if !reflect.DeepEqual(found.Spec.Template.Spec.Containers[0].Image, ns.Spec.Image) {
 		needUpdate = true
@@ -516,10 +515,6 @@ func (r *NacosStandaloneReconciler) completeProbeForNacosStandalone(ns *nacosv1a
 	}
 
 	return needUpdate, nil
-}
-
-func (r *NacosStandaloneReconciler) processDatabaseEnvForDeployment(ns *nacosv1alpha1.NacosStandalone, dep *appsv1.Deployment) (needUpdate bool) {
-	return util.ProcessDatabaseEnvForDeployment(ns.Namespace, ns.Name, ns.Spec.Database, dep)
 }
 
 /*func (r *NacosStandaloneReconciler) generateDataBaseEnvForMysql(ns *nacosv1alpha1.NacosStandalone) (envs []corev1.EnvVar) {
