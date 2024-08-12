@@ -1,80 +1,182 @@
 # nacos-operator
-// TODO(user): Add simple overview of use/purpose
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+nacos-operator is an operator for deploying nacos.
 
-## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
+## Overview
+With nacos-operator, you can deploy a standalone nacos or  nacos cluster.
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+## Usage
 
-```sh
-kubectl apply -f config/samples/
+### NacosStandalone
+
+You can use `NacosStandalone` CRD to create a standalone nacos-server for developing,testing etc.
+
+#### Simple usage example
+```shell
+kubectl create -f https://github.com/YunWZ/nacos-operator/blob/main/config/samples/nacos_v1alpha1_nacosstandalone.yaml
 ```
 
-2. Build and push your image to the location specified by `IMG`:
+#### Advanced usage examples
+The complete `a`CR example is as follows:
+```yaml
+apiVersion: nacos.yunweizhan.com.cn/v1alpha1
+kind: NacosStandalone
+metadata:
+  labels:
+    app.kubernetes.io/name: nacosstandalone
+    app.kubernetes.io/instance: nacosstandalone-sample
+    app.kubernetes.io/part-of: nacos-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: nacos-operator
+  name: nacosstandalone-sample
+  namespace: default
+spec:
+  image: "docker.io/nacos/nacos-server" #Nacos server image
+  imagePullSecrets: #a list of sercrets name
+    - name: secretNameA
+  service:
+    type: ClusterIP # Support type is ClusterIP/NodePort/LoadBalancer. Defaults to ClusterIP.
+  pvc: # Reference PersistentVolumeClaimSpec
+    storageClassName: "default"
+    resources:
+      requests:
+        storage: 10Gi
+  livenessProbe:
+    HTTPGet: 
+      path: /nacos/v2/console/health/liveness #Nacos server liveness endpoint. Defaults to "/nacos/v2/console/health/liveness"
+      port: client-http #The port of Nacos server liveness endpoint. Defaults to  client-http (8848)
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 10
+    successThreshold: 1
+    failureThreshold: 5
+  readinessProbe: 
+    HTTPGet:
+      path: /nacos/v2/console/health/readiness #Nacos server readiness endpoint. Defaults to "/nacos/v2/console/health/readiness"
+      port: client-http #The port of Nacos server liveness endpoint. Defaults to  client-http (8848)
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    successThreshold: 1
+    failureThreshold: 3
+  startupProbe:
+    HTTPGet: 
+      path: /nacos/v2/console/health/readiness #Nacos server startup probe. Defaults to "/nacos/v2/console/health/readiness"
+      port: client-http #The port of Nacos server liveness endpoint. Defaults to  client-http (8848)
+      scheme: HTTP
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 50
+  database:
+    mysql:
+      jdbcUrl: "jdbc:mysql://%s:%s/%s?characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=UTC" #The template will be formatted with dbHost and dbPort (in `dbServer` section).
+      dbServer:
+        - dbHost: 127.0.0.1
+          dbPort: 3306
+      dbName: nacos
+      secret:
+        name: db-user-pw #Sercret name of Mysql database. The secret must contain two keys: `user` and `password`.
+  jvmOptions: "-Xmx3072m -Xmn1024m" #Nacos server jvm options.
+  resources: # cpu,memory resources of nacos server
+    requests:
+      cpu: 100m
+      memory: 4Gi
+    limits:
+      cpu: 100m
+      memory: 4Gi
+  applicationConfig: # ConfigMap name. The ConfigMap will be projected as nacos server conf.
+    name: application-config-map
+```
+### NacosCluster
 
-```sh
-make docker-build docker-push IMG=<some-registry>/nacos-operator:tag
+You can use `NacosCluster` CRD to create a nacos-server cluster for developing,testing,production etc.
+
+Simple usage example:
+```shell
+kubectl create -f https://github.com/YunWZ/nacos-operator/blob/main/config/samples/nacos_v1alpha1_nacoscluster.yaml
 ```
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
-
-```sh
-make deploy IMG=<some-registry>/nacos-operator:tag
+#### Advanced usage examples
+The complete `a`CR example is as follows:
+```yaml
+apiVersion: nacos.yunweizhan.com.cn/v1alpha1
+kind: NacosCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: nacoscluster
+    app.kubernetes.io/instance: nacoscluster-sample
+    app.kubernetes.io/part-of: nacos-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: nacos-operator
+  name: nacoscluster-sample
+spec:
+  image: "docker.io/nacos/nacos-server" #Nacos server image
+  imagePullSecrets: #a list of sercrets name
+    - name: secretNameA
+  service:
+    type: ClusterIP # Support type is ClusterIP/NodePort/LoadBalancer. Defaults to ClusterIP.
+  pvc: # Reference PersistentVolumeClaimSpec
+    storageClassName: "default"
+    resources:
+      requests:
+        storage: 10Gi
+  livenessProbe:
+    HTTPGet:
+      path: /nacos/v2/console/health/liveness #Nacos server liveness endpoint. Defaults to "/nacos/v2/console/health/liveness"
+      port: client-http #The port of Nacos server liveness endpoint. Defaults to  client-http (8848)
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 10
+    successThreshold: 1
+    failureThreshold: 5
+  readinessProbe:
+    HTTPGet:
+      path: /nacos/v2/console/health/readiness #Nacos server readiness endpoint. Defaults to "/nacos/v2/console/health/readiness"
+      port: client-http #The port of Nacos server liveness endpoint. Defaults to  client-http (8848)
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    successThreshold: 1
+    failureThreshold: 3
+  startupProbe:
+    HTTPGet:
+      path: /nacos/v2/console/health/readiness #Nacos server startup probe. Defaults to "/nacos/v2/console/health/readiness"
+      port: client-http #The port of Nacos server liveness endpoint. Defaults to  client-http (8848)
+      scheme: HTTP
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 50
+  database:
+    mysql:
+      jdbcUrl: "jdbc:mysql://%s:%s/%s?characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=UTC" #The template will be formatted with dbHost and dbPort (in `dbServer` section).
+      dbServer:
+        - dbHost: 127.0.0.1
+          dbPort: 3306
+      dbName: nacos
+      secret:
+        name: db-user-pw #Sercret name of Mysql database. The secret must contain two keys: `user` and `password`.
+  jvmOptions: "-Xmx3072m -Xmn1024m" #Nacos server jvm options.
+  resources: # cpu,memory resources of nacos server
+    requests:
+      cpu: 100m
+      memory: 4Gi
+    limits:
+      cpu: 100m
+      memory: 4Gi
+  applicationConfig: # ConfigMap name. The ConfigMap will be projected as nacos server conf.
+    name: application-config-map
+  affinity: {} #Reference https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
+  tolerations: [] #Reference https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+  domain: "cluster.local"
 ```
-
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
-### Undeploy controller
-UnDeploy the controller from the cluster:
-
-```sh
-make undeploy
-```
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
