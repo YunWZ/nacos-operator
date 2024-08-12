@@ -19,7 +19,7 @@ package nacos
 import (
 	"context"
 	"errors"
-	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
+	nacosv1alpha1 "github.com/YunWZ/nacos-operator/apis/nacos/v1alpha1"
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
 	"github.com/YunWZ/nacos-operator/internal/util"
 	"github.com/go-logr/logr"
@@ -48,16 +48,17 @@ type NacosStandaloneReconciler struct {
 	Log    logr.Logger
 }
 
-// +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list;
-// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list,watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.15.0/pkg/reconcile
+// +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list
+// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+
 func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
 	//_ = logs.FromContext(ctx)

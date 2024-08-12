@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
+	nacosv1alpha1 "github.com/YunWZ/nacos-operator/apis/nacos/v1alpha1"
 	nacoscontroller "github.com/YunWZ/nacos-operator/internal/controller/nacos"
 	//+kubebuilder:scaffold:imports
 )

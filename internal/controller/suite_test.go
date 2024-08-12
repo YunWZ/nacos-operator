@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
+	nacosv1alpha1 "github.com/YunWZ/nacos-operator/apis/nacos/v1alpha1"
 	"path/filepath"
 	"testing"
 

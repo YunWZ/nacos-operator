@@ -13,8 +13,8 @@ RUN go mod download
 
 # Copy the go source
 COPY cmd/main.go cmd/main.go
-COPY api/ api/
-COPY internal/controller/ internal/controller/
+COPY apis/ apis/
+COPY internal/ internal/
 
 # Build
 # the GOARCH has not a default value to allow the binary be built according to the host where the command
@@ -30,4 +30,8 @@ WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
 
+EXPOSE 8080 8081 9443
+
 ENTRYPOINT ["/manager"]
+
+LABEL org.opencontainers.image.authors="verdgun@gmail.com"

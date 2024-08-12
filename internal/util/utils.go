@@ -2,7 +2,7 @@ package util
 
 import (
 	"fmt"
-	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
+	nacosv1alpha1 "github.com/YunWZ/nacos-operator/apis/nacos/v1alpha1"
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

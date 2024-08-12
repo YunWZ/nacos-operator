@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -25,38 +24,15 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-type ServiceSpec struct {
-	// +optional
-	// +kubebuilder:default="ClusterIP"
-	// +kubebuilder:validation:enum=ClusterIP;NodePort;LoadBalancer
-	Type corev1.ServiceType `json:"type,omitempty"`
-}
-
-type MySQLDatabaseSource struct {
-	// +optional
-	JdbcUrl string `json:"jdbcUrl,omitempty"`
-	// +kubebuilder:validation:MinItems=1
-	DbServer []DatabaseServer `json:"dbServer,omitempty"`
-	// +optional
-	// +kubebuilder:validation:Minlength=1
-	DbName string                      `json:"dbName,omitempty"`
-	Secret corev1.LocalObjectReference `json:"secret,omitempty"`
-}
-
-type DatabaseServer struct {
-	DbHost string `json:"dbHost,omitempty"`
-	DbPort string `json:"dbPort,omitempty"`
-}
-type DatabaseSource struct {
-	// +optional
-	Mysql *MySQLDatabaseSource `json:"mysql,omitempty"`
-}
-
-// NacosStandaloneSpec defines the desired state of NacosStandalone
-type NacosStandaloneSpec struct {
+// NacosClusterSpec defines the desired state of NacosCluster
+type NacosClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// +optional
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=0
+	Replicas *int32 `json:"replicas,omitempty"`
 	// +optional
 	Image string `json:"image,omitempty"`
 	// +optional
@@ -64,7 +40,7 @@ type NacosStandaloneSpec struct {
 	// +patchStrategy=merge
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
 	// +optional
-	// +kubebuilder:default="IfNotPresent"
+	// +kubebuilder:default:="IfNotPresent"
 	// +kubebuilder:validation:enum=Always;IfNotPresent;Never
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 	// +optional
@@ -76,46 +52,52 @@ type NacosStandaloneSpec struct {
 	// +optional
 	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
 	// +optional
-	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
-	// +optional
-	Database *DatabaseSource `json:"database,omitempty"`
+	StartupProbe *corev1.Probe   `json:"startupProbe,omitempty"`
+	Database     *DatabaseSource `json:"database,omitempty"`
 	// +optional
 	JvmOptions string `json:"jvmOptions,omitempty"`
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional
 	ApplicationConfig *corev1.LocalObjectReference `json:"applicationConfig,omitempty"`
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// If specified, the pod's tolerations.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// +optional
+	// +kubebuilder:default:="cluster.local"
+	Domain string `json:"domain,omitempty"`
 }
 
-// NacosStandaloneStatus defines the observed state of NacosStandalone
-type NacosStandaloneStatus struct {
+// NacosClusterStatus defines the observed state of NacosCluster
+type NacosClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	// +optional
-	Conditions []appsv1.DeploymentCondition `json:"conditions"`
+	Ready bool `json:"ready"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-
-// NacosStandalone is the Schema for the nacosstandalones API
-type NacosStandalone struct {
+// NacosCluster is the Schema for the nacosclusters API
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=nac;nacs
+type NacosCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   NacosStandaloneSpec   `json:"spec,omitempty"`
-	Status NacosStandaloneStatus `json:"status,omitempty"`
+	Spec   NacosClusterSpec   `json:"spec"`
+	Status NacosClusterStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// NacosStandaloneList contains a list of NacosStandalone
-type NacosStandaloneList struct {
+// NacosClusterList contains a list of NacosCluster
+type NacosClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NacosStandalone `json:"items"`
+	Items           []NacosCluster `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&NacosStandalone{}, &NacosStandaloneList{})
+	SchemeBuilder.Register(&NacosCluster{}, &NacosClusterList{})
 }

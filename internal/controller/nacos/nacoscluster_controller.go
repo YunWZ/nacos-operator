@@ -19,7 +19,7 @@ package nacos
 import (
 	"context"
 	"fmt"
-	nacosv1alpha1 "github.com/YunWZ/nacos-operator/api/nacos/v1alpha1"
+	nacosv1alpha1 "github.com/YunWZ/nacos-operator/apis/nacos/v1alpha1"
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
 	"github.com/YunWZ/nacos-operator/internal/util"
 	"github.com/go-logr/logr"
@@ -56,9 +56,10 @@ type NacosClusterReconciler struct {
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosclusters/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list;
-// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list,watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list
+// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+
 func (r *NacosClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
 	//_ = logs.FromContext(ctx)
