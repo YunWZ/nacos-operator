@@ -1,0 +1,9 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: nacos-catalog
+spec:
+  sourceType: grpc
+  image: quay.io/yunye/nacos/nacos-operator-catalog@sha256:9b9e1f8f0758ad218391b5c0e3ead381dbfc7a7f4281923872efbdcc3b10ccfc
+  displayName: Nacos Operators
+  publisher: Yun Ye
