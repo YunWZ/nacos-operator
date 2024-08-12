@@ -2,5 +2,5 @@
 resources:
 - nacos_v1alpha1_nacoscluster.yaml
 - nacos_v1alpha1_nacosstandalone.yaml
-- nacos_v1alpha1_nacoss.yaml
+#- nacos_v1alpha1_nacoss.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

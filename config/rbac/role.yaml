@@ -5,6 +5,40 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - pods
+  - secrets
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - nacos.yunweizhan.com.cn
   resources:
   - nacosclusters
@@ -26,6 +60,32 @@ rules:
   - nacos.yunweizhan.com.cn
   resources:
   - nacosclusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - nacos.yunweizhan.com.cn
+  resources:
+  - nacosstandalones/status
   verbs:
   - get
   - patch

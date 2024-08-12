@@ -11,6 +11,9 @@ spec:
     kind: NacosCluster
     listKind: NacosClusterList
     plural: nacosclusters
+    shortNames:
+    - nac
+    - nacs
     singular: nacoscluster
   scope: Namespaced
   versions:

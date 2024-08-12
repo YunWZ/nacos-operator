@@ -11,6 +11,9 @@ spec:
     kind: NacosStandalone
     listKind: NacosStandaloneList
     plural: nacosstandalones
+    shortNames:
+    - nas
+    - nass
     singular: nacosstandalone
   scope: Namespaced
   versions:
