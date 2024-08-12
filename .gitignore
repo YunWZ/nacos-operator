@@ -26,3 +26,5 @@ Dockerfile.cross
 *~
 ca/*
 config/webhook/manifests.yaml.local
+/catalog/
+manager
