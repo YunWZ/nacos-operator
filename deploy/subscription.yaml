@@ -2,8 +2,9 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: nacos-operator
+  namespace: operators
 spec:
-  channel: fast
+  channel: stable-v0
   name: nacos-operator
   source: nacos-catalog
   sourceNamespace: olm
