@@ -8,4 +8,12 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: nacos-operator
   name: nacoscluster-sample
-spec: {}
+spec:
+  database:
+    mysql:
+      dbServer:
+        - dbHost: 192.168.1.3
+          dbPort: "13306"
+      dbName: nacos
+      secret:
+        name: nacos
