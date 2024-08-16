@@ -1,9 +1,13 @@
 Schema: olm.semver
 GenerateMajorChannels: true
 GenerateMinorChannels: false
+DefaultChannelTypePreference: major
 Candidate:
   Bundles:
     - Image: quay.io/yunye/nacos/nacos-operator-bundle:v0.0.1
 Fast:
+  Bundles:
+    - Image: quay.io/yunye/nacos/nacos-operator-bundle:v0.0.1
+Stable:
   Bundles:
     - Image: quay.io/yunye/nacos/nacos-operator-bundle:v0.0.1

@@ -21,7 +21,7 @@ endif
 # To re-generate a bundle for any other default channel without changing the default setup, you can:
 # - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
 # - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
-DEFAULT_CHANNEL ?= "stable"
+DEFAULT_CHANNEL ?= stable
 ifneq ($(origin DEFAULT_CHANNEL), undefined)
 BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
@@ -44,7 +44,7 @@ BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 # You can enable this value if you would like to use SHA Based Digests
 # To enable set flag to true
-USE_IMAGE_DIGESTS ?= true
+#USE_IMAGE_DIGESTS ?= true
 ifeq ($(USE_IMAGE_DIGESTS), true)
 	BUNDLE_GEN_FLAGS += --use-image-digests
 endif
@@ -70,8 +70,8 @@ endif
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
-CONTAINER_TOOL ?= $(shell if docker ps >/dev/null 2>&1; then echo docker; elif podman ps >/dev/null 2>&1; then echo podman; fi)
-#CONTAINER_TOOL ?= docker
+#CONTAINER_TOOL ?= $(shell if docker ps >/dev/null 2>&1; then echo docker; elif podman ps >/dev/null 2>&1; then echo podman; fi)
+CONTAINER_TOOL ?= docker
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -237,6 +237,7 @@ endif
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+	rm -rf bundle && mkdir bundle
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
@@ -289,7 +290,7 @@ BUNDLE_IMGS ?= $(BUNDLE_IMG)
 
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
-
+CATALOG_DIR:= catalog
 # Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
 ifneq ($(origin CATALOG_BASE_IMG), undefined)
 FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
@@ -303,6 +304,13 @@ catalog-build: opm catalog-generate## Build a catalog image.
 	#$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 	$(CONTAINER_TOOL) build -f catalog.Dockerfile -t $(CATALOG_IMG) .
 
+.PHONY: catalog-buildx
+catalog-buildx: opm catalog-generate
+	- docker buildx create --name project-v3-builder
+	docker buildx use project-v3-builder
+	- docker buildx build --push --no-cache --platform=$(PLATFORMS) --tag $(CATALOG_IMG) -f $(CATALOG_DIR).Dockerfile .
+	- docker buildx rm project-v3-builder
+
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
@@ -310,5 +318,5 @@ catalog-push: ## Push a catalog image.
 
 .PHONY: catalog-generate
 catalog-generate:
-	rm -rf catalog && mkdir catalog
+	rm -rf $(CATALOG_DIR) && mkdir $(CATALOG_DIR)
 	$(OPM) alpha render-template semver -o yaml catalog-template.yaml > catalog/index.yaml
