@@ -56,7 +56,7 @@ type NacosStandaloneReconciler struct {
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosstandalones/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list
-// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 func (r *NacosStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

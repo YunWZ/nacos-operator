@@ -23,19 +23,17 @@ import (
 	"github.com/YunWZ/nacos-operator/internal/controller/nacos/constants"
 	"github.com/YunWZ/nacos-operator/internal/util"
 	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"reflect"
-	"sort"
-	"strings"
-	"time"
-
-	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sort"
+	"strings"
 )
 
 // NacosClusterReconciler reconciles a NacosCluster object
@@ -57,8 +55,8 @@ type NacosClusterReconciler struct {
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=nacos.yunweizhan.com.cn,resources=nacosclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=pods;configmaps;secrets,verbs=get;list
-// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services;persistentvolumes;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete;deletecollection
 
 func (r *NacosClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
@@ -71,12 +69,14 @@ func (r *NacosClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			r.Log.Info("NacosCluster resource not found. Try to delete all referenced resources.", "NacosCluster", req.NamespacedName)
 			err = r.deleteResourcesForNacosCluster(ctx, req)
 
-			return ctrl.Result{}, nil
+			if err != nil {
+				r.Log.Error(err, "Failed to delete resources.")
+			}
 		}
 
 		// Error reading the object - requeue the request.
 		r.Log.Error(err, "Failed to get NacosCluster")
-		return ctrl.Result{RequeueAfter: time.Second * 3}, client.IgnoreNotFound(err)
+		return util.NewResult(false), client.IgnoreNotFound(err)
 	}
 
 	requeue, err := r.completeServiceForNacosCluster(nc)
@@ -147,10 +147,8 @@ func (r *NacosClusterReconciler) deleteResourcesForNacosCluster(ctx context.Cont
 }
 
 func (r *NacosClusterReconciler) deleteDeployment(name types.NamespacedName) (err error) {
-	deleteOptions := []client.DeleteAllOfOption{
-		client.InNamespace(name.Namespace),
-		client.MatchingLabels(labelsForNacosCluster(name.Name))}
-	err = r.DeleteAllOf(context.TODO(), &appsv1.Deployment{}, deleteOptions...)
+	err = r.DeleteAllOf(context.TODO(), &appsv1.Deployment{}, client.InNamespace(name.Namespace),
+		client.MatchingLabels(labelsForNacosCluster(name.Name)))
 	return err
 }
 

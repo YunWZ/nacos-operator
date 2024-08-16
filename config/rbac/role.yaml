@@ -11,6 +11,7 @@ rules:
   verbs:
   - create
   - delete
+  - deletecollection
   - get
   - list
   - patch
@@ -28,6 +29,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - persistentvolumeclaims
   - persistentvolumes
   - services
   verbs:
